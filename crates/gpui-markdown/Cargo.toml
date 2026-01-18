@@ -1,0 +1,28 @@
+# SPDX-FileCopyrightText: 2026 AprilNEA LLC
+#
+# SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
+
+[package]
+name = "gpui-markdown"
+version = "0.1.0"
+edition = "2024"
+license = "AGPL-3.0-only OR LicenseRef-Commercial"
+authors = ["AprilNEA <dev@aprilnea.me>"]
+description = "Markdown rendering component for GPUI"
+
+[features]
+default = ["syntax-highlighting"]
+syntax-highlighting = ["dep:syntect"]
+
+[dependencies]
+gpui = "0.2.2"
+gpui-component = "0.5.0"
+
+# Markdown parsing
+pulldown-cmark = { version = "0.13", default-features = false, features = ["simd"] }
+
+# Syntax highlighting (optional)
+syntect = { version = "5.2", default-features = false, features = ["default-fancy"], optional = true }
+
+# Utilities
+smallvec = "1.13"

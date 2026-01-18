@@ -2,11 +2,10 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 
-use chrono::{Datelike, Local};
+use chrono::Local;
 use gpui::*;
 use gpui_component::{
     ActiveTheme, Icon, IconName, Sizable,
-    button::{Button, ButtonVariants},
     h_flex,
     input::{Input, InputState},
     label::Label,
@@ -19,16 +18,10 @@ use uuid::Uuid;
 
 use crate::database::{self, conversation};
 
-/// Event emitted when sidebar toggle button is clicked
-pub struct SidebarToggleEvent;
-
 /// Event emitted when a conversation is selected
 pub struct ConversationSelectedEvent {
     pub conversation_id: Option<Uuid>,
 }
-
-/// Event emitted when new chat button is clicked
-pub struct NewChatEvent;
 
 /// Chat history item for UI display
 #[derive(Clone)]
@@ -46,9 +39,7 @@ pub struct ChatSidebar {
     db_ready: bool,
 }
 
-impl EventEmitter<SidebarToggleEvent> for ChatSidebar {}
 impl EventEmitter<ConversationSelectedEvent> for ChatSidebar {}
-impl EventEmitter<NewChatEvent> for ChatSidebar {}
 
 impl ChatSidebar {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
@@ -124,47 +115,6 @@ impl ChatSidebar {
             conversation_id: id,
         });
         cx.notify();
-    }
-
-    fn toggle_sidebar(&mut self, cx: &mut Context<Self>) {
-        cx.emit(SidebarToggleEvent);
-    }
-
-    fn new_chat(&mut self, cx: &mut Context<Self>) {
-        self.selected_conversation = None;
-        cx.emit(NewChatEvent);
-        cx.notify();
-    }
-
-    fn render_toolbar(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
-        h_flex()
-            .w_full()
-            .pl(px(78.)) // Leave space for traffic lights
-            .pr_2()
-            .py_2()
-            .justify_end()
-            .child(
-                h_flex()
-                    .gap_1()
-                    .child(
-                        Button::new("toggle-sidebar")
-                            .icon(IconName::PanelLeft)
-                            .ghost()
-                            .xsmall()
-                            .on_click(cx.listener(|this, _, _window, cx| {
-                                this.toggle_sidebar(cx);
-                            })),
-                    )
-                    .child(
-                        Button::new("new-chat")
-                            .icon(IconName::Plus)
-                            .ghost()
-                            .xsmall()
-                            .on_click(cx.listener(|this, _, _window, cx| {
-                                this.new_chat(cx);
-                            })),
-                    ),
-            )
     }
 
     fn render_search(&mut self, _cx: &mut Context<Self>) -> impl IntoElement {
@@ -361,7 +311,7 @@ impl Render for ChatSidebar {
             .bg(theme.sidebar)
             .border_r_1()
             .border_color(theme.border)
-            .child(self.render_toolbar(cx))
+            .pt(px(44.)) // Space for traffic lights + toolbar buttons
             .child(self.render_search(cx))
             // .child(self.render_quick_tags(cx))
             .child(self.render_history_list(cx))

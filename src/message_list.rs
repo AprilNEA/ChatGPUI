@@ -2,11 +2,14 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 
+use std::time::Duration;
+
 use gpui::prelude::FluentBuilder;
 use gpui::*;
 use gpui_component::{
     ActiveTheme, h_flex, label::Label, scroll::ScrollableElement, skeleton::Skeleton, v_flex,
 };
+use gpui_markdown::Markdown;
 
 use crate::message::{Message, MessageStatus, Role};
 
@@ -38,78 +41,143 @@ impl Render for MessageList {
             .child(
                 v_flex()
                     .p_4()
-                    .gap_4()
-                    .children(messages.into_iter().map(|msg| MessageBubble::new(msg))),
+                    .gap_6()
+                    .children(messages.into_iter().map(|msg| MessageItem::new(msg))),
             )
     }
 }
 
 #[derive(IntoElement)]
-pub struct MessageBubble {
+pub struct MessageItem {
     message: Message,
 }
 
-impl MessageBubble {
+impl MessageItem {
     pub fn new(message: Message) -> Self {
         Self { message }
     }
 }
 
-impl RenderOnce for MessageBubble {
+impl RenderOnce for MessageItem {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
         let is_user = self.message.role == Role::User;
         let is_streaming = matches!(self.message.status, MessageStatus::Streaming);
 
-        let bubble = v_flex()
-            .max_w(rems(32.))
-            .px_4()
-            .py_3()
-            .rounded_lg()
-            .when(is_user, |this| {
-                this.bg(theme.primary).text_color(theme.primary_foreground)
-            })
-            .when(!is_user, |this| {
-                this.bg(theme.muted).text_color(theme.foreground)
-            })
-            .child(
-                v_flex()
-                    .text_sm()
-                    .when(self.message.content.is_empty() && is_streaming, |this| {
-                        this.child(Skeleton::new().h_4().w_32())
-                    })
-                    .when(!self.message.content.is_empty(), |this| {
-                        this.child(Label::new(self.message.content.clone()))
-                    }),
-            )
-            .when(is_streaming, |this| {
-                this.child(
-                    Label::new("Generating...")
+        if is_user {
+            // User messages: bubble style, right-aligned
+            let bubble = v_flex()
+                .max_w(rems(32.))
+                .px_4()
+                .py_3()
+                .rounded_lg()
+                .bg(theme.primary)
+                .text_color(theme.primary_foreground)
+                .child(
+                    v_flex()
+                        .text_sm()
+                        .child(Label::new(self.message.content.clone())),
+                );
+
+            h_flex().w_full().justify_end().child(bubble)
+        } else {
+            // Assistant messages: full-width, no bubble, direct Markdown rendering
+            v_flex()
+                .w_full()
+                .gap_2()
+                .child(
+                    // Optional: Add a subtle label for assistant
+                    Label::new("Assistant")
                         .text_xs()
-                        .mt_2()
                         .text_color(theme.muted_foreground),
                 )
-            })
-            .when(
-                matches!(self.message.status, MessageStatus::Error(_)),
-                |this| {
-                    if let MessageStatus::Error(ref err) = self.message.status {
-                        this.child(
-                            Label::new(format!("Error: {}", err))
-                                .text_xs()
-                                .mt_2()
-                                .text_color(theme.danger),
-                        )
-                    } else {
-                        this
-                    }
-                },
-            );
-
-        h_flex()
-            .w_full()
-            .when(is_user, |this| this.justify_end())
-            .when(!is_user, |this| this.justify_start())
-            .child(bubble)
+                .child(
+                    v_flex()
+                        .w_full()
+                        .when(self.message.content.is_empty() && is_streaming, |this| {
+                            this.child(Skeleton::new().h_4().w_48())
+                        })
+                        .when(!self.message.content.is_empty(), |this| {
+                            this.child(Markdown::new(self.message.content.clone()))
+                        }),
+                )
+                .when(is_streaming, |this| {
+                    this.child(
+                        h_flex()
+                            .gap_1()
+                            .child(
+                                div()
+                                    .size_2()
+                                    .rounded_full()
+                                    .bg(theme.muted_foreground)
+                                    .with_animation(
+                                        "pulse-1",
+                                        Animation::new(Duration::from_secs(1))
+                                            .repeat()
+                                            .with_easing(pulsating_between(0.4, 1.0)),
+                                        |this, delta| this.opacity(delta),
+                                    ),
+                            )
+                            .child(
+                                div()
+                                    .size_2()
+                                    .rounded_full()
+                                    .bg(theme.muted_foreground)
+                                    .with_animation(
+                                        "pulse-2",
+                                        Animation::new(Duration::from_secs(1))
+                                            .repeat()
+                                            .with_easing(pulsating_between(0.4, 1.0)),
+                                        |this, delta| this.opacity(delta),
+                                    ),
+                            )
+                            .child(
+                                div()
+                                    .size_2()
+                                    .rounded_full()
+                                    .bg(theme.muted_foreground)
+                                    .with_animation(
+                                        "pulse-3",
+                                        Animation::new(Duration::from_secs(1))
+                                            .repeat()
+                                            .with_easing(pulsating_between(0.4, 1.0)),
+                                        |this, delta| this.opacity(delta),
+                                    ),
+                            ),
+                    )
+                })
+                .when(
+                    matches!(self.message.status, MessageStatus::Error(_)),
+                    |this| {
+                        if let MessageStatus::Error(ref err) = self.message.status {
+                            this.child(
+                                h_flex()
+                                    .gap_2()
+                                    .items_center()
+                                    .child(
+                                        div()
+                                            .size_4()
+                                            .rounded_full()
+                                            .bg(theme.danger)
+                                            .flex()
+                                            .items_center()
+                                            .justify_center()
+                                            .text_xs()
+                                            .text_color(gpui::white())
+                                            .child("!"),
+                                    )
+                                    .child(
+                                        Label::new(format!("Error: {}", err))
+                                            .text_sm()
+                                            .text_color(theme.danger),
+                                    ),
+                            )
+                        } else {
+                            this
+                        }
+                    },
+                )
+        }
+        .into_any_element()
     }
 }

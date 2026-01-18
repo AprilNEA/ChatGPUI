@@ -4,13 +4,16 @@
 
 use std::time::Duration;
 
+use gpui::prelude::FluentBuilder;
 use gpui::*;
-use gpui_component::{ActiveTheme, h_flex, v_flex};
+use gpui_component::{
+    ActiveTheme, IconName, Sizable,
+    button::{Button, ButtonVariants},
+    h_flex, v_flex,
+};
 use gpui_tokio_bridge::Tokio;
 
-use crate::chat_sidebar::{
-    ChatSidebar, ConversationSelectedEvent, NewChatEvent, SidebarToggleEvent,
-};
+use crate::chat_sidebar::{ChatSidebar, ConversationSelectedEvent};
 use crate::chat_view::{ChatView, ConversationUpdatedEvent};
 use crate::database;
 use crate::model_selector::{ModelSelector, ModelSelectorChangedEvent};
@@ -57,15 +60,6 @@ impl ChatApp {
             },
         ));
 
-        // Subscribe to sidebar toggle events
-        subscriptions.push(cx.subscribe_in(
-            &sidebar,
-            window,
-            |this, _, _event: &SidebarToggleEvent, _window, cx| {
-                this.toggle_sidebar(cx);
-            },
-        ));
-
         // Subscribe to conversation selection events
         subscriptions.push(cx.subscribe_in(
             &sidebar,
@@ -76,17 +70,6 @@ impl ChatApp {
                         view.load_conversation(conv_id, cx);
                     });
                 }
-            },
-        ));
-
-        // Subscribe to new chat events
-        subscriptions.push(cx.subscribe_in(
-            &sidebar,
-            window,
-            |this, _, _event: &NewChatEvent, _window, cx| {
-                this.chat_view.update(cx, |view, cx| {
-                    view.new_chat(cx);
-                });
             },
         ));
 
@@ -115,6 +98,15 @@ impl ChatApp {
         self.sidebar_collapsed = !self.sidebar_collapsed;
         cx.notify();
     }
+
+    fn new_chat(&mut self, cx: &mut Context<Self>) {
+        self.sidebar.update(cx, |sidebar, cx| {
+            sidebar.select_conversation(None, cx);
+        });
+        self.chat_view.update(cx, |view, cx| {
+            view.new_chat(cx);
+        });
+    }
 }
 
 impl Render for ChatApp {
@@ -124,40 +116,80 @@ impl Render for ChatApp {
         let expanded_width = self.sidebar_width;
         let collapsed_width = SIDEBAR_COLLAPSED_WIDTH;
 
-        h_flex()
+        div()
             .size_full()
+            .relative()
             .bg(theme.background)
-            // Left: Chat history sidebar with animation
             .child(
-                div()
-                    .id("sidebar-container")
-                    .h_full()
-                    .flex_shrink_0()
-                    .overflow_hidden()
-                    .child(self.sidebar.clone())
-                    .with_animation(
-                        ElementId::Name(
-                            format!("sidebar-{}", if collapsed { "collapse" } else { "expand" })
-                                .into(),
-                        ),
-                        Animation::new(SIDEBAR_ANIMATION_DURATION),
-                        move |el, delta| {
-                            let (start, end) = if collapsed {
-                                (expanded_width, collapsed_width)
-                            } else {
-                                (collapsed_width, expanded_width)
-                            };
-                            el.w(px(start + delta * (end - start)))
-                        },
+                h_flex()
+                    .size_full()
+                    // Left: Chat history sidebar with animation
+                    .child(
+                        div()
+                            .id("sidebar-container")
+                            .h_full()
+                            .flex_shrink_0()
+                            .overflow_hidden()
+                            .child(self.sidebar.clone())
+                            .with_animation(
+                                ElementId::Name(
+                                    format!(
+                                        "sidebar-{}",
+                                        if collapsed { "collapse" } else { "expand" }
+                                    )
+                                    .into(),
+                                ),
+                                Animation::new(SIDEBAR_ANIMATION_DURATION),
+                                move |el, delta| {
+                                    let (start, end) = if collapsed {
+                                        (expanded_width, collapsed_width)
+                                    } else {
+                                        (collapsed_width, expanded_width)
+                                    };
+                                    el.w(px(start + delta * (end - start)))
+                                },
+                            ),
+                    )
+                    // Right: Main chat area
+                    .child(
+                        v_flex()
+                            .flex_1()
+                            .h_full()
+                            .child(
+                                // Header wrapper with conditional left margin when sidebar collapsed
+                                div()
+                                    .w_full()
+                                    .when(collapsed, |el: Div| el.ml(px(96.))) // Space for buttons when collapsed
+                                    .child(self.model_selector.clone()),
+                            )
+                            .child(self.chat_view.clone()),
                     ),
             )
-            // Right: Main chat area
+            // Absolutely positioned toolbar buttons (fixed position regardless of sidebar state)
             .child(
-                v_flex()
-                    .flex_1()
-                    .h_full()
-                    .child(self.model_selector.clone())
-                    .child(self.chat_view.clone()),
+                h_flex()
+                    .absolute()
+                    .top(px(10.))
+                    .left(px(78.)) // After traffic lights
+                    .gap_1()
+                    .child(
+                        Button::new("toggle-sidebar")
+                            .icon(IconName::PanelLeft)
+                            .ghost()
+                            .small()
+                            .on_click(cx.listener(|this, _, _window, cx| {
+                                this.toggle_sidebar(cx);
+                            })),
+                    )
+                    .child(
+                        Button::new("new-chat")
+                            .icon(IconName::Plus)
+                            .ghost()
+                            .small()
+                            .on_click(cx.listener(|this, _, _window, cx| {
+                                this.new_chat(cx);
+                            })),
+                    ),
             )
     }
 }

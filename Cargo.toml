@@ -26,6 +26,7 @@ postgres = ["sea-orm/sqlx-postgres", "migration/sqlx-postgres", "dep:postgresql_
 # Workspace crates
 entity = { path = "crates/entity" }
 migration = { path = "crates/migration" }
+gpui-markdown = { path = "crates/gpui-markdown" }
 
 gpui = "0.2.2"
 gpui-component = "0.5.0"
