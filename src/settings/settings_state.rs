@@ -39,7 +39,7 @@ impl AppSettings {
     fn config_path() -> PathBuf {
         dirs::config_dir()
             .unwrap_or_else(|| PathBuf::from("."))
-            .join("chatgpui")
+            .join(env!("APP_IDENTIFIER"))
             .join("settings.json")
     }
 

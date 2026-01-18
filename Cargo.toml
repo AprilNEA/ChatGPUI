@@ -68,9 +68,12 @@ postgresql_embedded = { version = "0.20", features = ["bundled"], optional = tru
 sea-orm = { version = "1.1", features = ["runtime-tokio-rustls", "macros"] }
 sea-orm-migration = { version = "1.1", features = ["runtime-tokio-rustls"] }
 
-# Secure credential storage
-keyring = { version = "3", features = ["apple-native"] }
+# Random password generation
 rand = "0.9"
+
+# Unix process management
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
 
 # macOS dock icon
 [target.'cfg(target_os = "macos")'.dependencies]
@@ -95,3 +98,7 @@ LegalCopyright = "Copyright © 2026 AprilNEA LLC. All rights reserved."
 [package.metadata.appimage]
 icon = "bundle/chatgpui.png"
 assets = ["assets/chatgpui.desktop"]
+
+[build-dependencies]
+shadow-rs = "0.37"
+cargo_metadata = "0.19"

@@ -3,7 +3,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 
 use anyhow::Result;
-use keyring::Entry;
 use postgresql_embedded::{PostgreSQL, Settings};
 use rand::Rng;
 use rand::distr::Alphanumeric;
@@ -12,9 +11,6 @@ use sea_orm_migration::MigratorTrait;
 use std::path::PathBuf;
 
 use migration::Migrator;
-
-const KEYRING_SERVICE: &str = "com.aprilnea.chatgpui";
-const KEYRING_USER: &str = "postgres";
 
 /// Database manager that handles embedded PostgreSQL and SeaORM connection
 pub struct DatabaseManager {
@@ -28,22 +24,49 @@ impl DatabaseManager {
         let data_dir = Self::get_data_dir()?;
         let pg_data_dir = data_dir.join("data");
 
-        // Clean up stale lock file if no postgres process is running
+        // Check for existing PostgreSQL process and handle it
         let pid_file = pg_data_dir.join("postmaster.pid");
         if pid_file.exists() {
-            tracing::warn!("Found stale postmaster.pid, cleaning up...");
+            #[cfg(unix)]
+            {
+                if let Some(pid) = Self::read_pid_from_file(&pid_file) {
+                    let process_running = unsafe { libc::kill(pid, 0) } == 0;
+                    if process_running {
+                        tracing::info!(
+                            "PostgreSQL process {} is still running, stopping it...",
+                            pid
+                        );
+                        // Send SIGTERM to gracefully stop PostgreSQL
+                        unsafe { libc::kill(pid, libc::SIGTERM) };
+                        // Wait for process to exit (up to 10 seconds)
+                        for _ in 0..100 {
+                            std::thread::sleep(std::time::Duration::from_millis(100));
+                            if unsafe { libc::kill(pid, 0) } != 0 {
+                                tracing::info!("PostgreSQL process {} stopped", pid);
+                                break;
+                            }
+                        }
+                        // Clean up shared memory after process stops
+                        Self::cleanup_shared_memory(&pid_file);
+                    } else {
+                        tracing::warn!("Found stale postmaster.pid, cleaning up...");
+                        Self::cleanup_shared_memory(&pid_file);
+                    }
+                }
+            }
             let _ = std::fs::remove_file(&pid_file);
         }
 
-        // Get or create password from system keychain
-        let password = Self::get_or_create_password()?;
+        // Get or create password based on storage mode setting
+        let password = Self::get_or_create_password(&data_dir)?;
+        tracing::debug!("Password obtained, length: {}", password.len());
 
         let settings = Settings {
             installation_dir: data_dir.join("postgresql"),
             password_file: data_dir.join(".pgpass"),
             data_dir: pg_data_dir,
             temporary: false,
-            username: KEYRING_USER.to_string(),
+            username: "postgres".to_string(),
             password,
             ..Default::default()
         };
@@ -54,6 +77,11 @@ impl DatabaseManager {
         postgres.start().await?;
 
         tracing::info!("PostgreSQL started on port {}", postgres.settings().port);
+        tracing::debug!(
+            "PostgreSQL settings - username: {}, password length: {}",
+            postgres.settings().username,
+            postgres.settings().password.len()
+        );
 
         Ok(Self {
             postgres,
@@ -61,42 +89,59 @@ impl DatabaseManager {
         })
     }
 
-    /// Get password from keychain or create a new one
-    fn get_or_create_password() -> Result<String> {
-        let entry = Entry::new(KEYRING_SERVICE, KEYRING_USER)
-            .map_err(|e| anyhow::anyhow!("Failed to create keyring entry: {}", e))?;
+    /// Get or create password from .pgpass file
+    fn get_or_create_password(data_dir: &PathBuf) -> Result<String> {
+        let pgpass_file = data_dir.join(".pgpass");
 
-        // Try to get existing password
-        match entry.get_password() {
-            Ok(password) => {
-                tracing::info!("Retrieved database password from system keychain");
-                Ok(password)
+        // Try to read existing password
+        if pgpass_file.exists() {
+            if let Ok(content) = std::fs::read_to_string(&pgpass_file) {
+                let password = content.trim().to_string();
+                if !password.is_empty() {
+                    tracing::info!("Retrieved database password from .pgpass file");
+                    return Ok(password);
+                }
             }
-            Err(keyring::Error::NoEntry) => {
-                // Generate a new secure password
-                let password: String = rand::thread_rng()
-                    .sample_iter(&Alphanumeric)
-                    .take(32)
-                    .map(char::from)
-                    .collect();
-
-                // Store in keychain
-                entry
-                    .set_password(&password)
-                    .map_err(|e| anyhow::anyhow!("Failed to store password in keychain: {}", e))?;
-
-                tracing::info!("Generated and stored new database password in system keychain");
-                Ok(password)
-            }
-            Err(e) => Err(anyhow::anyhow!("Failed to access keychain: {}", e)),
         }
+
+        // Generate new password (postgresql_embedded will write it to .pgpass)
+        let password = Self::generate_password();
+        tracing::info!("Generated new database password");
+        Ok(password)
+    }
+
+    /// Generate a secure random password
+    fn generate_password() -> String {
+        rand::rng()
+            .sample_iter(&Alphanumeric)
+            .take(32)
+            .map(char::from)
+            .collect()
+    }
+
+    /// Read PID from postmaster.pid file
+    #[cfg(unix)]
+    fn read_pid_from_file(pid_file: &std::path::Path) -> Option<i32> {
+        std::fs::read_to_string(pid_file)
+            .ok()
+            .and_then(|contents| contents.lines().next().map(|s| s.to_string()))
+            .and_then(|pid_str| pid_str.trim().parse::<i32>().ok())
+    }
+
+    /// Clean up stale shared memory segments from a crashed PostgreSQL
+    #[cfg(unix)]
+    fn cleanup_shared_memory(_pid_file: &std::path::Path) {
+        tracing::info!("Cleaning up shared memory segments...");
+        // Use ipcrm to clean up shared memory segments owned by current user
+        // This is a best-effort cleanup
+        let _ = std::process::Command::new("ipcrm").args(["-a"]).output();
     }
 
     /// Get the data directory for the database
     fn get_data_dir() -> Result<PathBuf> {
         let data_dir = dirs::data_dir()
             .unwrap_or_else(|| PathBuf::from("."))
-            .join("chatgpui")
+            .join(env!("APP_IDENTIFIER"))
             .join("db");
 
         std::fs::create_dir_all(&data_dir)?;
