@@ -5,6 +5,8 @@ SPDX-License-Identifier: CC-BY-4.0
 
 <div align="center">
 
+<img src="docs/icon.svg" alt="ChatGPUI" width="128" height="128">
+
 # ChatGPUI
 
 A blazingly fast, GPU-accelerated native LLM chat client built with [GPUI](https://github.com/zed-industries/zed/tree/main/crates/gpui) — the same rendering engine that powers [Zed](https://zed.dev).
