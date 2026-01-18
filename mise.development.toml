@@ -1,2 +1,5 @@
+[tools]
+"ubi:j178/prek" = "latest"
+
 [hooks]
 postinstall = ["prek install"]
