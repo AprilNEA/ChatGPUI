@@ -1,6 +1,6 @@
 [package]
 name = "chatgpui"
-description = "A LLM chat client built with GPUI"
+description = "A GPU-accelerated native LLM chat client built with GPUI"
 version = "0.1.0"
 edition = "2024"
 license = "AGPL-3.0-only OR LicenseRef-Commercial"
@@ -52,7 +52,7 @@ icon = ["bundle/AppIcon.icns"]
 copyright = "Copyright © 2026 AprilNEA LLC. All rights reserved."
 category = "public.app-category.developer-tools"
 osx_minimum_system_version = "12.0"
-short_description = "A LLM chat client built with GPUI"
+short_description = "A GPU-accelerated native LLM chat client built with GPUI"
 
 [package.metadata.winres]
 OriginalFilename = "chatgpui.exe"
