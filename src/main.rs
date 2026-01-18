@@ -101,7 +101,12 @@ fn main() {
         database::init(cx);
 
         // Register global actions
-        cx.on_action(|_: &Quit, cx| cx.quit());
+        cx.on_action(|_: &Quit, cx| {
+            // Shutdown database synchronously before quitting
+            let db = database::get_db(cx).clone();
+            db.shutdown_sync();
+            cx.quit();
+        });
         cx.on_action(|_: &OpenSettings, cx| open_settings_window(cx));
 
         // Bind keyboard shortcuts

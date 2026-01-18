@@ -20,10 +20,22 @@ impl DatabaseManager {
     /// Create a new database manager with embedded PostgreSQL
     pub async fn new() -> Result<Self> {
         let data_dir = Self::get_data_dir()?;
+        let pg_data_dir = data_dir.join("data");
+
+        // Clean up stale lock file if no postgres process is running
+        let pid_file = pg_data_dir.join("postmaster.pid");
+        if pid_file.exists() {
+            tracing::warn!("Found stale postmaster.pid, cleaning up...");
+            let _ = std::fs::remove_file(&pid_file);
+        }
 
         let settings = Settings {
             installation_dir: data_dir.join("postgresql"),
-            data_dir: data_dir.join("data"),
+            password_file: data_dir.join(".pgpass"), // Persistent password file
+            data_dir: pg_data_dir,
+            temporary: false, // Critical: persist data between restarts
+            username: "postgres".to_string(),
+            password: "chatgpui_secret".to_string(), // Fixed password for persistence
             ..Default::default()
         };
 

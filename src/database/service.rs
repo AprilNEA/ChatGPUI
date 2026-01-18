@@ -159,6 +159,35 @@ impl DatabaseService {
         tracing::info!("Database shutdown complete");
         Ok(())
     }
+
+    /// Synchronous shutdown - blocks current thread until complete
+    /// Uses a new tokio runtime for the shutdown process
+    pub fn shutdown_sync(&self) {
+        let manager = self.manager.clone();
+        let connection = self.connection.clone();
+
+        // Create a new runtime just for shutdown
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build();
+
+        if let Ok(rt) = rt {
+            rt.block_on(async {
+                // Drop connection first
+                *connection.write().await = None;
+
+                // Then shutdown manager
+                if let Some(mut mgr) = manager.write().await.take() {
+                    if let Err(e) = mgr.shutdown().await {
+                        tracing::error!("Failed to shutdown database: {}", e);
+                    }
+                }
+            });
+            tracing::info!("Database shutdown complete (sync)");
+        } else {
+            tracing::error!("Failed to create tokio runtime for database shutdown");
+        }
+    }
 }
 
 /// Get database service from GPUI context
