@@ -1,0 +1,30 @@
+version = 1
+
+[[annotations]]
+path = ["src/**/*.rs"]
+SPDX-FileCopyrightText = "2026 AprilNEA LLC"
+SPDX-License-Identifier = "AGPL-3.0-only OR LicenseRef-Commercial"
+
+# Configuration files (Public Domain)
+[[annotations]]
+path = ["*.json", "*.yaml", "*.toml", ".gitignore", ".env.example"]
+SPDX-FileCopyrightText = "2026 AprilNEA LLC"
+SPDX-License-Identifier = "CC0-1.0"
+
+# Locked File - No Copyright
+[[annotations]]
+path = ["Cargo.toml", "Cargo.lock"]
+SPDX-FileCopyrightText = "none"
+SPDX-License-Identifier = "CC0-1.0"
+
+# Documentation
+[[annotations]]
+path = ["docs/**", "*.md"]
+SPDX-FileCopyrightText = "2026 AprilNEA LLC"
+SPDX-License-Identifier = "CC-BY-4.0"
+
+# Static resources
+[[annotations]]
+path = ["public/**", "assets/**", "locales/**"]
+SPDX-FileCopyrightText = "2026 AprilNEA LLC"
+SPDX-License-Identifier = "CC-BY-4.0"

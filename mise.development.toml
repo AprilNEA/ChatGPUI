@@ -1,0 +1,2 @@
+[hooks]
+postinstall = ["prek install"]

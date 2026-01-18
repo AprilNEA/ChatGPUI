@@ -1,0 +1,63 @@
+[package]
+name = "chatgpui"
+description = "A LLM chat client built with GPUI"
+version = "0.1.0"
+edition = "2024"
+license = "AGPL-3.0-only OR LicenseRef-Commercial"
+license-file = "LICENSE"
+authors = ["AprilNEA <dev@aprilnea.me>"]
+repository = "https://github.com/AprilNEA/ChatGPUI"
+
+[dependencies]
+gpui = "0.2.2"
+gpui-component = "0.5.0"
+gpui-component-assets = "0.5.0"
+gpui-tokio-bridge = "0.1.0"
+
+# HTTP client
+reqwest = { version = "0.12", features = ["json", "stream"] }
+
+# Async
+tokio = { version = "1", features = ["full"] }
+futures = "0.3"
+async-channel = "2.3"
+
+# JSON
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Error handling
+anyhow = "1.0"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = "0.3"
+
+# UUID for message IDs
+uuid = { version = "1.0", features = ["v4"] }
+
+# Time
+chrono = "0.4"
+
+# Config directory
+dirs = "5"
+
+# i18n
+rust-i18n = "3"
+
+[package.metadata.bundle]
+name = "ChatGPUI"
+identifier = "com.aprilnea.chatgpui"
+icon = ["bundle/AppIcon.icns"]
+copyright = "Copyright © 2026 AprilNEA LLC. All rights reserved."
+category = "public.app-category.developer-tools"
+osx_minimum_system_version = "12.0"
+short_description = "A LLM chat client built with GPUI"
+
+[package.metadata.winres]
+OriginalFilename = "chatgpui.exe"
+LegalCopyright = "Copyright © 2026 AprilNEA LLC. All rights reserved."
+
+[package.metadata.appimage]
+icon = "bundle/chatgpui.png"
+assets = ["assets/chatgpui.desktop"]

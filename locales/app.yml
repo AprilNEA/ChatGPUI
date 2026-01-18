@@ -1,0 +1,124 @@
+# SPDX-FileCopyrightText: 2026 AprilNEA LLC
+# SPDX-License-Identifier: CC-BY-4.0
+
+_version: 2
+
+app.name:
+  en: "GPUI Chat"
+  zh-CN: "GPUI Chat"
+
+app.about:
+  en: "About GPUI Chat"
+  zh-CN: "关于 GPUI Chat"
+
+app.settings:
+  en: "Settings..."
+  zh-CN: "设置..."
+
+app.quit:
+  en: "Quit"
+  zh-CN: "退出"
+
+menu.select_model:
+  en: "Select Model"
+  zh-CN: "选择模型"
+
+menu.not_configured:
+  en: "Not Configured"
+  zh-CN: "未配置"
+
+sidebar.search:
+  en: "Search"
+  zh-CN: "搜索"
+
+sidebar.favorites:
+  en: "Favorites"
+  zh-CN: "收藏"
+
+sidebar.today:
+  en: "Today"
+  zh-CN: "今天"
+
+sidebar.yesterday:
+  en: "Yesterday"
+  zh-CN: "昨天"
+
+sidebar.default_tag:
+  en: "Default"
+  zh-CN: "默认"
+
+settings.title:
+  en: "Settings"
+  zh-CN: "设置"
+
+settings.general:
+  en: "General"
+  zh-CN: "通用"
+
+settings.appearance:
+  en: "Appearance"
+  zh-CN: "外观"
+
+settings.provider:
+  en: "Provider"
+  zh-CN: "提供商"
+
+settings.prompts:
+  en: "Prompts"
+  zh-CN: "提示词"
+
+settings.advanced:
+  en: "Advanced"
+  zh-CN: "高级"
+
+settings.general_settings:
+  en: "General Settings"
+  zh-CN: "通用设置"
+
+settings.appearance_settings:
+  en: "Appearance Settings"
+  zh-CN: "外观设置"
+
+settings.prompts_settings:
+  en: "Prompts Settings"
+  zh-CN: "提示词设置"
+
+settings.advanced_settings:
+  en: "Advanced Settings"
+  zh-CN: "高级设置"
+
+settings.coming_soon:
+  en: "Coming Soon"
+  zh-CN: "即将推出"
+
+settings.select_provider:
+  en: "Please select a provider"
+  zh-CN: "请选择一个提供商"
+
+settings.auth_method:
+  en: "Authentication Method"
+  zh-CN: "身份验证方式"
+
+settings.api_key:
+  en: "API Key"
+  zh-CN: "API 密钥"
+
+settings.api_key_placeholder:
+  en: "Enter API Key"
+  zh-CN: "输入 API 密钥"
+
+auth.api_key:
+  en: "API Key"
+  zh-CN: "API 密钥"
+
+auth.oauth:
+  en: "OAuth"
+  zh-CN: "OAuth"
+
+auth.none:
+  en: "No Authentication"
+  zh-CN: "无需认证"
+
+error.stream_error:
+  en: "Stream error"
+  zh-CN: "流错误"
