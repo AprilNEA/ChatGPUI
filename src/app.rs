@@ -4,7 +4,6 @@
 
 use std::time::Duration;
 
-use gpui::prelude::FluentBuilder;
 use gpui::*;
 use gpui_component::{
     ActiveTheme, IconName, Sizable,
@@ -96,6 +95,10 @@ impl ChatApp {
 
     fn toggle_sidebar(&mut self, cx: &mut Context<Self>) {
         self.sidebar_collapsed = !self.sidebar_collapsed;
+        let collapsed = self.sidebar_collapsed;
+        self.model_selector.update(cx, |selector, cx| {
+            selector.set_sidebar_collapsed(collapsed, cx);
+        });
         cx.notify();
     }
 
@@ -155,14 +158,17 @@ impl Render for ChatApp {
                         v_flex()
                             .flex_1()
                             .h_full()
+                            .min_h_0() // Critical for scroll to work
+                            .overflow_hidden()
+                            .child(self.model_selector.clone())
                             .child(
-                                // Header wrapper with conditional left margin when sidebar collapsed
                                 div()
+                                    .flex_1()
                                     .w_full()
-                                    .when(collapsed, |el: Div| el.ml(px(96.))) // Space for buttons when collapsed
-                                    .child(self.model_selector.clone()),
-                            )
-                            .child(self.chat_view.clone()),
+                                    .min_h_0()
+                                    .overflow_hidden()
+                                    .child(self.chat_view.clone()),
+                            ),
                     ),
             )
             // Absolutely positioned toolbar buttons (fixed position regardless of sidebar state)

@@ -383,8 +383,22 @@ impl Render for ChatView {
 
         v_flex()
             .size_full()
+            .min_h_0()
+            .overflow_hidden()
             .bg(theme.background)
-            .child(v_flex().flex_1().child(self.message_list.clone()))
-            .child(self.message_input.clone())
+            .child(
+                div()
+                    .flex_1()
+                    .w_full()
+                    .min_h_0()
+                    .overflow_hidden()
+                    .child(self.message_list.clone()),
+            )
+            .child(
+                div()
+                    .flex_shrink_0()
+                    .w_full()
+                    .child(self.message_input.clone()),
+            )
     }
 }

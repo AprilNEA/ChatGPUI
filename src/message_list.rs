@@ -6,9 +6,7 @@ use std::time::Duration;
 
 use gpui::prelude::FluentBuilder;
 use gpui::*;
-use gpui_component::{
-    ActiveTheme, h_flex, label::Label, scroll::ScrollableElement, skeleton::Skeleton, v_flex,
-};
+use gpui_component::{ActiveTheme, h_flex, label::Label, skeleton::Skeleton, v_flex};
 use gpui_markdown::Markdown;
 
 use crate::message::{Message, MessageStatus, Role};
@@ -36,10 +34,11 @@ impl Render for MessageList {
 
         v_flex()
             .id("message-list")
-            .flex_1()
-            .overflow_y_scrollbar()
+            .size_full()
+            .overflow_y_scroll()
             .child(
                 v_flex()
+                    .w_full()
                     .p_4()
                     .gap_6()
                     .children(messages.into_iter().map(|msg| MessageItem::new(msg))),

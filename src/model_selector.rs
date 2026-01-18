@@ -2,6 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 
+use gpui::prelude::FluentBuilder;
 use gpui::*;
 use gpui_component::{
     ActiveTheme, Icon, IconName, Sizable,
@@ -10,7 +11,7 @@ use gpui_component::{
     label::Label,
 };
 
-use crate::settings::{get_settings, update_settings};
+use crate::settings::get_settings;
 
 pub struct ModelSelectorChangedEvent {
     pub provider_id: String,
@@ -21,6 +22,7 @@ pub struct ModelSelectorChangedEvent {
 pub struct ModelSelector {
     selected_provider_id: Option<String>,
     selected_model: Option<String>,
+    sidebar_collapsed: bool,
 }
 
 impl EventEmitter<ModelSelectorChangedEvent> for ModelSelector {}
@@ -34,7 +36,13 @@ impl ModelSelector {
         Self {
             selected_provider_id,
             selected_model,
+            sidebar_collapsed: false,
         }
+    }
+
+    pub fn set_sidebar_collapsed(&mut self, collapsed: bool, cx: &mut Context<Self>) {
+        self.sidebar_collapsed = collapsed;
+        cx.notify();
     }
 
     fn get_provider_display(&self, cx: &App) -> (String, String) {
@@ -61,6 +69,7 @@ impl Render for ModelSelector {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
         let (model_name, provider_name) = self.get_provider_display(cx);
+        let collapsed = self.sidebar_collapsed;
 
         h_flex()
             .w_full()
@@ -72,10 +81,11 @@ impl Render for ModelSelector {
             .border_color(theme.border)
             .bg(theme.background)
             .child(
-                // Left side: Model selector
+                // Left side: Model selector (with extra padding when sidebar collapsed)
                 h_flex()
                     .gap_1()
                     .items_center()
+                    .when(collapsed, |el| el.pl(px(96.))) // Space for buttons when sidebar collapsed
                     .child(
                         Button::new("model-trigger").ghost().child(
                             h_flex()
