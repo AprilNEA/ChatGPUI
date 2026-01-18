@@ -1,0 +1,86 @@
+name: Rust CI
+
+on:
+  push:
+    branches: [canary]
+  pull_request:
+    branches: [canary]
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+
+# Cancel the old workflow running in the same group
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-Dwarnings"
+
+jobs:
+  check:
+    name: Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: jdx/mise-action@v3.5.1
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check workspace
+        run: cargo check
+
+  fmt:
+    name: Rustfmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: jdx/mise-action@v3.5.1
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup rustfmt
+        run: rustup component add rustfmt
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+        
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: jdx/mise-action@v3.5.1
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup clippy
+        run: rustup component add clippy
+
+      - name: Run clippy
+        run: cargo clippy --all-targets
+
+  # test:
+  #   name: Test
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v6
+  #     - uses: jdx/mise-action@v3.5.1
+  #       with:
+  #         github_token: ${{ secrets.GITHUB_TOKEN }}
+
+  #     - name: Run tests
+  #       run: cargo test --lib --tests
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: mozilla-actions/sccache-action@v0.0.9
+      - uses: actions/checkout@v6
+      - uses: jdx/mise-action@v3.5.1
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build workspace
+        run: cargo build
