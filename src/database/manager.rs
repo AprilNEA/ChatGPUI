@@ -3,12 +3,18 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 
 use anyhow::Result;
+use keyring::Entry;
 use postgresql_embedded::{PostgreSQL, Settings};
+use rand::Rng;
+use rand::distr::Alphanumeric;
 use sea_orm::{Database, DatabaseConnection};
 use sea_orm_migration::MigratorTrait;
 use std::path::PathBuf;
 
 use migration::Migrator;
+
+const KEYRING_SERVICE: &str = "com.aprilnea.chatgpui";
+const KEYRING_USER: &str = "postgres";
 
 /// Database manager that handles embedded PostgreSQL and SeaORM connection
 pub struct DatabaseManager {
@@ -29,13 +35,16 @@ impl DatabaseManager {
             let _ = std::fs::remove_file(&pid_file);
         }
 
+        // Get or create password from system keychain
+        let password = Self::get_or_create_password()?;
+
         let settings = Settings {
             installation_dir: data_dir.join("postgresql"),
-            password_file: data_dir.join(".pgpass"), // Persistent password file
+            password_file: data_dir.join(".pgpass"),
             data_dir: pg_data_dir,
-            temporary: false, // Critical: persist data between restarts
-            username: "postgres".to_string(),
-            password: "chatgpui_secret".to_string(), // Fixed password for persistence
+            temporary: false,
+            username: KEYRING_USER.to_string(),
+            password,
             ..Default::default()
         };
 
@@ -50,6 +59,37 @@ impl DatabaseManager {
             postgres,
             connection: None,
         })
+    }
+
+    /// Get password from keychain or create a new one
+    fn get_or_create_password() -> Result<String> {
+        let entry = Entry::new(KEYRING_SERVICE, KEYRING_USER)
+            .map_err(|e| anyhow::anyhow!("Failed to create keyring entry: {}", e))?;
+
+        // Try to get existing password
+        match entry.get_password() {
+            Ok(password) => {
+                tracing::info!("Retrieved database password from system keychain");
+                Ok(password)
+            }
+            Err(keyring::Error::NoEntry) => {
+                // Generate a new secure password
+                let password: String = rand::thread_rng()
+                    .sample_iter(&Alphanumeric)
+                    .take(32)
+                    .map(char::from)
+                    .collect();
+
+                // Store in keychain
+                entry
+                    .set_password(&password)
+                    .map_err(|e| anyhow::anyhow!("Failed to store password in keychain: {}", e))?;
+
+                tracing::info!("Generated and stored new database password in system keychain");
+                Ok(password)
+            }
+            Err(e) => Err(anyhow::anyhow!("Failed to access keychain: {}", e)),
+        }
     }
 
     /// Get the data directory for the database
@@ -72,7 +112,7 @@ impl DatabaseManager {
 
         // Connect to the database
         let connection_url = self.get_connection_url(database_name);
-        tracing::info!("Connecting to database: {}", connection_url);
+        tracing::info!("Connecting to database...");
 
         let connection = Database::connect(&connection_url).await?;
 

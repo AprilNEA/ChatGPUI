@@ -1213,8 +1213,10 @@ dependencies = [
  "gpui-component-assets",
  "gpui-markdown",
  "gpui-tokio-bridge",
+ "keyring",
  "migration",
  "postgresql_embedded",
+ "rand 0.9.2",
  "reqwest",
  "rust-i18n",
  "sea-orm",
@@ -3793,6 +3795,18 @@ checksum = "464a3709c7f55f1f721e5389aa6ea4e3bc6aba669353300af094b29ffbdde1d8"
 dependencies = [
  "once_cell",
  "wasm-bindgen",
+]
+
+[[package]]
+name = "keyring"
+version = "3.6.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eebcc3aff044e5944a8fbaf69eb277d11986064cba30c468730e8b9909fb551c"
+dependencies = [
+ "log",
+ "security-framework 2.11.1",
+ "security-framework 3.5.1",
+ "zeroize",
 ]
 
 [[package]]
