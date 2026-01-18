@@ -70,8 +70,8 @@ impl RenderOnce for MessageItem {
                 .px_4()
                 .py_3()
                 .rounded_lg()
-                .bg(theme.primary)
-                .text_color(theme.primary_foreground)
+                .bg(theme.accent)
+                .text_color(theme.accent_foreground)
                 .child(
                     v_flex()
                         .text_sm()
