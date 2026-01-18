@@ -10,7 +10,7 @@ SPDX-License-Identifier: CC-BY-4.0
 A blazingly fast, GPU-accelerated native LLM chat client built with [GPUI](https://github.com/zed-industries/zed/tree/main/crates/gpui) — the same rendering engine that powers [Zed](https://zed.dev).
 
 [![License](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
-[![Rust](https://img.shields.io/badge/rust-1.75%2B-orange.svg)](https://www.rust-lang.org/)
+[![Rust](https://img.shields.io/badge/rust-nightly-orange.svg)](https://www.rust-lang.org/)
 [![GPUI](https://img.shields.io/badge/gpui-0.2-green.svg)](https://github.com/zed-industries/zed)
 
 [Features](#features) • [Installation](#installation) • [Configuration](#configuration) • [Development](#development) • [License](#license)

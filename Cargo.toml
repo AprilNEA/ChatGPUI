@@ -4,9 +4,14 @@ description = "A GPU-accelerated native LLM chat client built with GPUI"
 version = "0.1.0"
 edition = "2024"
 license = "AGPL-3.0-only OR LicenseRef-Commercial"
-license-file = "LICENSE"
 authors = ["AprilNEA <dev@aprilnea.me>"]
 repository = "https://github.com/AprilNEA/ChatGPUI"
+
+[features]
+default = ["sentry", "postgres"]
+sentry = ["dep:sentry"]
+# sqlite = ["sea-orm/sqlx-sqlite", "dep:rusqlite"]
+postgres = ["sea-orm/sqlx-postgres", "sea-orm-migration/sqlx-postgres", "dep:postgresql_embedded"]
 
 [dependencies]
 gpui = "0.2.2"
@@ -21,6 +26,7 @@ reqwest = { version = "0.12", features = ["json", "stream"] }
 tokio = { version = "1", features = ["full"] }
 futures = "0.3"
 async-channel = "2.3"
+async-trait = "0.1"
 
 # JSON
 serde = { version = "1.0", features = ["derive"] }
@@ -28,6 +34,7 @@ serde_json = "1.0"
 
 # Error handling
 anyhow = "1.0"
+sentry = { version = "0.46.1", optional = true }
 
 # Logging
 tracing = "0.1"
@@ -39,11 +46,20 @@ uuid = { version = "1.0", features = ["v4"] }
 # Time
 chrono = "0.4"
 
+# macOS dock icon
+[target.'cfg(target_os = "macos")'.dependencies]
+cocoa = "0.26"
+
 # Config directory
 dirs = "5"
 
 # i18n
 rust-i18n = "3"
+
+# Database
+postgresql_embedded = { version = "0.20", features = ["bundled"], optional = true }
+sea-orm = { version = "1.1", features = ["runtime-tokio-rustls", "macros"] }
+sea-orm-migration = { version = "1.1", features = ["runtime-tokio-rustls"] }
 
 [package.metadata.bundle]
 name = "ChatGPUI"

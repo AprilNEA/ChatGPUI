@@ -43,6 +43,14 @@ sidebar.yesterday:
   en: "Yesterday"
   zh-CN: "昨天"
 
+sidebar.older:
+  en: "Older"
+  zh-CN: "更早"
+
+sidebar.no_conversations:
+  en: "No conversations yet"
+  zh-CN: "暂无对话"
+
 sidebar.default_tag:
   en: "Default"
   zh-CN: "默认"

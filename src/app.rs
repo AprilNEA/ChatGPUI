@@ -6,9 +6,11 @@ use std::time::Duration;
 
 use gpui::*;
 use gpui_component::{h_flex, v_flex, ActiveTheme};
+use gpui_tokio_bridge::Tokio;
 
-use crate::chat_sidebar::{ChatSidebar, SidebarToggleEvent};
-use crate::chat_view::ChatView;
+use crate::chat_sidebar::{ChatSidebar, ConversationSelectedEvent, NewChatEvent, SidebarToggleEvent};
+use crate::chat_view::{ChatView, ConversationUpdatedEvent};
+use crate::database;
 use crate::model_selector::{ModelSelector, ModelSelectorChangedEvent};
 
 // Sidebar constants
@@ -22,18 +24,28 @@ pub struct ChatApp {
     chat_view: Entity<ChatView>,
     sidebar_collapsed: bool,
     sidebar_width: f32,
-    _model_subscription: Subscription,
-    _sidebar_subscription: Subscription,
+    _subscriptions: Vec<Subscription>,
 }
 
 impl ChatApp {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
+        // Initialize database asynchronously
+        let db = database::get_db(cx).clone();
+        Tokio::spawn(cx, async move {
+            if let Err(e) = db.initialize().await {
+                tracing::error!("Failed to initialize database: {}", e);
+            }
+        })
+        .detach();
+
         let sidebar = cx.new(|cx| ChatSidebar::new(window, cx));
         let model_selector = cx.new(|cx| ModelSelector::new(cx));
         let chat_view = cx.new(|cx| ChatView::new(window, cx));
 
+        let mut subscriptions = Vec::new();
+
         // Subscribe to model selector changes
-        let _model_subscription = cx.subscribe_in(
+        subscriptions.push(cx.subscribe_in(
             &model_selector,
             window,
             |this, _, _event: &ModelSelectorChangedEvent, _window, cx| {
@@ -41,16 +53,51 @@ impl ChatApp {
                     view.reload_llm_client(cx);
                 });
             },
-        );
+        ));
 
         // Subscribe to sidebar toggle events
-        let _sidebar_subscription = cx.subscribe_in(
+        subscriptions.push(cx.subscribe_in(
             &sidebar,
             window,
             |this, _, _event: &SidebarToggleEvent, _window, cx| {
                 this.toggle_sidebar(cx);
             },
-        );
+        ));
+
+        // Subscribe to conversation selection events
+        subscriptions.push(cx.subscribe_in(
+            &sidebar,
+            window,
+            |this, _, event: &ConversationSelectedEvent, _window, cx| {
+                if let Some(conv_id) = event.conversation_id {
+                    this.chat_view.update(cx, |view, cx| {
+                        view.load_conversation(conv_id, cx);
+                    });
+                }
+            },
+        ));
+
+        // Subscribe to new chat events
+        subscriptions.push(cx.subscribe_in(
+            &sidebar,
+            window,
+            |this, _, _event: &NewChatEvent, _window, cx| {
+                this.chat_view.update(cx, |view, cx| {
+                    view.new_chat(cx);
+                });
+            },
+        ));
+
+        // Subscribe to conversation updated events (to refresh sidebar)
+        subscriptions.push(cx.subscribe_in(
+            &chat_view,
+            window,
+            |this, _, _event: &ConversationUpdatedEvent, _window, cx| {
+                this.sidebar.update(cx, |sidebar, cx| {
+                    sidebar.reload(cx);
+                });
+            },
+        ));
 
         Self {
             sidebar,
@@ -58,8 +105,7 @@ impl ChatApp {
             chat_view,
             sidebar_collapsed: false,
             sidebar_width: SIDEBAR_DEFAULT_WIDTH,
-            _model_subscription,
-            _sidebar_subscription,
+            _subscriptions: subscriptions,
         }
     }
 

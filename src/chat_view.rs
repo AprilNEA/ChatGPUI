@@ -4,15 +4,22 @@
 
 use gpui::*;
 use gpui_component::{v_flex, ActiveTheme};
-
 use gpui_tokio_bridge::Tokio;
+use uuid::Uuid;
 
 use crate::{
+    database::{self, message as db_message},
     llm_client::{LlmClient, StreamEventResult},
     message::{ChatMessage, Message, MessageStatus, Role},
     message_input::{MessageInput, SubmitEvent},
     message_list::MessageList,
+    settings::get_settings,
 };
+
+/// Event emitted when a conversation is created or updated
+pub struct ConversationUpdatedEvent {
+    pub conversation_id: Uuid,
+}
 
 pub struct ChatView {
     messages: Vec<Message>,
@@ -20,8 +27,11 @@ pub struct ChatView {
     message_input: Entity<MessageInput>,
     llm_client: Option<LlmClient>,
     is_generating: bool,
+    current_conversation_id: Option<Uuid>,
     _subscription: Subscription,
 }
+
+impl EventEmitter<ConversationUpdatedEvent> for ChatView {}
 
 impl ChatView {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
@@ -50,8 +60,66 @@ impl ChatView {
             message_input,
             llm_client,
             is_generating: false,
+            current_conversation_id: None,
             _subscription,
         }
+    }
+
+    /// Start a new chat (clear messages and conversation)
+    pub fn new_chat(&mut self, cx: &mut Context<Self>) {
+        self.messages.clear();
+        self.messages.push(Message::system("You are a helpful assistant."));
+        self.current_conversation_id = None;
+        self.update_message_list(cx);
+    }
+
+    /// Load an existing conversation
+    pub fn load_conversation(&mut self, conversation_id: Uuid, cx: &mut Context<Self>) {
+        self.current_conversation_id = Some(conversation_id);
+        self.messages.clear();
+        self.messages.push(Message::system("You are a helpful assistant."));
+
+        let db = database::get_db(cx).clone();
+        let (tx, rx) = async_channel::unbounded();
+
+        Tokio::spawn(cx, async move {
+            let result = db.list_messages(conversation_id).await;
+            let _ = tx.send(result).await;
+        })
+        .detach();
+
+        cx.spawn(async move |this, cx| {
+            if let Ok(Ok(db_messages)) = rx.recv().await {
+                let _ = cx.update(|app| {
+                    let _ = this.update(app, |this, cx| {
+                        for msg in db_messages {
+                            let role = match msg.role {
+                                db_message::MessageRole::System => Role::System,
+                                db_message::MessageRole::User => Role::User,
+                                db_message::MessageRole::Assistant => Role::Assistant,
+                            };
+                            let status = match msg.status {
+                                db_message::MessageStatus::Pending => MessageStatus::Pending,
+                                db_message::MessageStatus::Streaming => MessageStatus::Streaming,
+                                db_message::MessageStatus::Done => MessageStatus::Done,
+                                db_message::MessageStatus::Error => {
+                                    MessageStatus::Error(msg.error_message.unwrap_or_default())
+                                }
+                            };
+                            this.messages.push(Message {
+                                id: msg.id,
+                                role,
+                                content: msg.content,
+                                status,
+                                created_at: msg.created_at,
+                            });
+                        }
+                        this.update_message_list(cx);
+                    });
+                });
+            }
+        })
+        .detach();
     }
 
     fn handle_user_message(
@@ -64,10 +132,103 @@ impl ChatView {
             return;
         }
 
-        self.messages.push(Message::user(&content));
+        let user_message = Message::user(&content);
+        self.messages.push(user_message.clone());
         self.update_message_list(cx);
 
+        // Create conversation if this is the first message
+        if self.current_conversation_id.is_none() {
+            self.create_conversation_and_save_message(content.clone(), user_message.id, cx);
+        } else {
+            self.save_message_to_db(user_message.id, Role::User, content.clone(), cx);
+        }
+
         self.generate_response(window, cx);
+    }
+
+    fn create_conversation_and_save_message(
+        &mut self,
+        first_message: String,
+        _message_id: Uuid,
+        cx: &mut Context<Self>,
+    ) {
+        let db = database::get_db(cx).clone();
+        let settings = get_settings(cx);
+
+        // Get provider info from settings
+        let (provider_id, model) = settings
+            .active_provider()
+            .map(|p| (p.id.clone(), p.default_model.clone()))
+            .unwrap_or_else(|| ("unknown".to_string(), "unknown".to_string()));
+
+        // Use first few chars of message as title
+        let title = first_message.chars().take(50).collect::<String>();
+        let title = if first_message.len() > 50 {
+            format!("{}...", title)
+        } else {
+            title
+        };
+
+        let (tx, rx) = async_channel::unbounded();
+        let first_message_clone = first_message.clone();
+
+        Tokio::spawn(cx, async move {
+            // Create conversation
+            let conv_result = db
+                .create_conversation(title, provider_id, model, None)
+                .await;
+
+            if let Ok(conv) = conv_result {
+                // Save the first message
+                let _ = db
+                    .create_message(
+                        conv.id,
+                        db_message::MessageRole::User,
+                        first_message_clone,
+                        db_message::MessageStatus::Done,
+                    )
+                    .await;
+                let _ = tx.send(conv.id).await;
+            }
+        })
+        .detach();
+
+        cx.spawn(async move |this, cx| {
+            if let Ok(conversation_id) = rx.recv().await {
+                let _ = cx.update(|app| {
+                    let _ = this.update(app, |this, cx| {
+                        this.current_conversation_id = Some(conversation_id);
+                        cx.emit(ConversationUpdatedEvent { conversation_id });
+                    });
+                });
+            }
+        })
+        .detach();
+    }
+
+    fn save_message_to_db(&self, _message_id: Uuid, role: Role, content: String, cx: &mut Context<Self>) {
+        let Some(conversation_id) = self.current_conversation_id else {
+            return;
+        };
+
+        let db = database::get_db(cx).clone();
+        let db_role = match role {
+            Role::System => db_message::MessageRole::System,
+            Role::User => db_message::MessageRole::User,
+            Role::Assistant => db_message::MessageRole::Assistant,
+        };
+
+        Tokio::spawn(cx, async move {
+            let _ = db
+                .create_message(
+                    conversation_id,
+                    db_role,
+                    content,
+                    db_message::MessageStatus::Done,
+                )
+                .await;
+        })
+        .detach();
     }
 
     fn generate_response(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
@@ -165,6 +326,14 @@ impl ChatView {
         self.message_input.update(cx, |input, cx| {
             input.set_loading(false, cx);
         });
+
+        // Save assistant message to database
+        if let Some(msg) = self.messages.last() {
+            if msg.role == Role::Assistant {
+                self.save_message_to_db(msg.id, Role::Assistant, msg.content.clone(), cx);
+            }
+        }
+
         self.update_message_list(cx);
     }
 
