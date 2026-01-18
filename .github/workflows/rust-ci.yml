@@ -27,6 +27,21 @@ jobs:
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libasound2-dev \
+            libfontconfig-dev \
+            libwayland-dev \
+            libx11-xcb-dev \
+            libxkbcommon-x11-dev \
+            libssl-dev \
+            libzstd-dev \
+            libvulkan1 \
+            clang \
+            mold
+
       - name: Check workspace
         run: cargo check
 
@@ -53,6 +68,21 @@ jobs:
       - uses: jdx/mise-action@v3.5.1
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libasound2-dev \
+            libfontconfig-dev \
+            libwayland-dev \
+            libx11-xcb-dev \
+            libxkbcommon-x11-dev \
+            libssl-dev \
+            libzstd-dev \
+            libvulkan1 \
+            clang \
+            mold
 
       - name: Setup clippy
         run: rustup component add clippy
@@ -81,6 +111,21 @@ jobs:
       - uses: jdx/mise-action@v3.5.1
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libasound2-dev \
+            libfontconfig-dev \
+            libwayland-dev \
+            libx11-xcb-dev \
+            libxkbcommon-x11-dev \
+            libssl-dev \
+            libzstd-dev \
+            libvulkan1 \
+            clang \
+            mold
 
       - name: Build workspace
         run: cargo build
