@@ -12,6 +12,7 @@ A blazingly fast, GPU-accelerated native LLM chat client built with [GPUI](https
 [![License](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-nightly-orange.svg)](https://www.rust-lang.org/)
 [![GPUI](https://img.shields.io/badge/gpui-0.2-green.svg)](https://github.com/zed-industries/zed)
+[![Hits](https://hits.aprilnea.com/hits?url=https://github.com/aprilnea/chatgpui)](https://github.com/aprilnea/chatgpui)
 
 [Features](#features) • [Installation](#installation) • [Configuration](#configuration) • [Development](#development) • [License](#license)
 
