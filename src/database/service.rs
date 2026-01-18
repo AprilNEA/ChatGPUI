@@ -9,7 +9,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
-use super::entity::{conversation, message};
+use entity::{conversation, message};
 use super::manager::DatabaseManager;
 use super::repository::{ConversationRepository, MessageRepository};
 

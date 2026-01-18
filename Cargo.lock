@@ -1197,11 +1197,13 @@ dependencies = [
  "chrono",
  "cocoa 0.26.0",
  "dirs 5.0.1",
+ "entity",
  "futures",
  "gpui",
  "gpui-component",
  "gpui-component-assets",
  "gpui-tokio-bridge",
+ "migration",
  "postgresql_embedded",
  "reqwest",
  "rust-i18n",
@@ -2010,6 +2012,13 @@ name = "endi"
 version = "1.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "66b7e2430c6dff6a955451e2cfc438f09cea1965a9d6f87f7e3b90decc014099"
+
+[[package]]
+name = "entity"
+version = "0.1.0"
+dependencies = [
+ "sea-orm",
+]
 
 [[package]]
 name = "enum-iterator"
@@ -3889,7 +3898,6 @@ version = "0.30.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2e99fb7a497b1e3339bc746195567ed8d3e24945ecd636e3619d20b9de9e9149"
 dependencies = [
- "cc",
  "pkg-config",
  "vcpkg",
 ]
@@ -4139,6 +4147,14 @@ dependencies = [
  "log",
  "objc",
  "paste",
+]
+
+[[package]]
+name = "migration"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "sea-orm-migration",
 ]
 
 [[package]]

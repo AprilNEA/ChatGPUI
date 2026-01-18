@@ -9,7 +9,7 @@ use sea_orm::{
 };
 use uuid::Uuid;
 
-use super::entity::{conversation, message};
+use entity::{conversation, message};
 
 /// Repository for conversation operations
 pub struct ConversationRepository;

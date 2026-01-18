@@ -1,19 +1,32 @@
-[package]
-name = "chatgpui"
-description = "A GPU-accelerated native LLM chat client built with GPUI"
-version = "0.1.0"
+[workspace]
+members = ["crates/*"]
+resolver = "2"
+
+[workspace.package]
 edition = "2024"
 license = "AGPL-3.0-only OR LicenseRef-Commercial"
 authors = ["AprilNEA <dev@aprilnea.me>"]
 repository = "https://github.com/AprilNEA/ChatGPUI"
 
+[package]
+name = "chatgpui"
+description = "A GPU-accelerated native LLM chat client built with GPUI"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
 [features]
 default = ["sentry", "postgres"]
 sentry = ["dep:sentry"]
-# sqlite = ["sea-orm/sqlx-sqlite", "dep:rusqlite"]
-postgres = ["sea-orm/sqlx-postgres", "sea-orm-migration/sqlx-postgres", "dep:postgresql_embedded"]
+postgres = ["sea-orm/sqlx-postgres", "migration/sqlx-postgres", "dep:postgresql_embedded"]
 
 [dependencies]
+# Workspace crates
+entity = { path = "crates/entity" }
+migration = { path = "crates/migration" }
+
 gpui = "0.2.2"
 gpui-component = "0.5.0"
 gpui-component-assets = "0.5.0"
@@ -45,15 +58,6 @@ uuid = { version = "1.0", features = ["v4"] }
 
 # Time
 chrono = "0.4"
-rust-i18n = "3"
-sea-orm = { version = "1.1", features = ["runtime-tokio-rustls", "sqlx-sqlite"] }
-
-# macOS dock icon
-[target.'cfg(target_os = "macos")'.dependencies]
-cocoa = "0.26"
-
-# Config directory
-dirs = "5"
 
 # i18n
 rust-i18n = "3"
@@ -62,6 +66,13 @@ rust-i18n = "3"
 postgresql_embedded = { version = "0.20", features = ["bundled"], optional = true }
 sea-orm = { version = "1.1", features = ["runtime-tokio-rustls", "macros"] }
 sea-orm-migration = { version = "1.1", features = ["runtime-tokio-rustls"] }
+
+# macOS dock icon
+[target.'cfg(target_os = "macos")'.dependencies]
+cocoa = "0.26"
+
+# Config directory
+dirs = "5"
 
 [package.metadata.bundle]
 name = "ChatGPUI"

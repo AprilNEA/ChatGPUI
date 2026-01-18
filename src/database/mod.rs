@@ -2,9 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 
-pub mod entity;
 pub mod manager;
-pub mod migration;
 pub mod repository;
 pub mod service;
 

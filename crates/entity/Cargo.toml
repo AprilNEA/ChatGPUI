@@ -1,0 +1,13 @@
+# SPDX-FileCopyrightText: 2026 AprilNEA LLC
+#
+# SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
+
+[package]
+name = "entity"
+version = "0.1.0"
+edition = "2024"
+license = "AGPL-3.0-only OR LicenseRef-Commercial"
+authors = ["AprilNEA <dev@aprilnea.me>"]
+
+[dependencies]
+sea-orm = { version = "1.1", features = ["runtime-tokio-rustls"] }

@@ -8,7 +8,7 @@ use sea_orm::{Database, DatabaseConnection};
 use sea_orm_migration::MigratorTrait;
 use std::path::PathBuf;
 
-use super::migration::Migrator;
+use migration::Migrator;
 
 /// Database manager that handles embedded PostgreSQL and SeaORM connection
 pub struct DatabaseManager {
