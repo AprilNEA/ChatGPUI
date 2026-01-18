@@ -13,7 +13,7 @@ mod app;
 mod chat_sidebar;
 mod chat_view;
 mod database;
-mod llm_client;
+mod llm;
 mod message;
 mod message_input;
 mod message_list;
@@ -137,7 +137,7 @@ fn main() {
                     ))),
                     titlebar: Some(TitlebarOptions {
                         appears_transparent: true,
-                        traffic_light_position: Some(point(px(9.), px(9.))),
+                        traffic_light_position: Some(point(px(14.), px(12.))),
                         ..Default::default()
                     }),
                     ..Default::default()

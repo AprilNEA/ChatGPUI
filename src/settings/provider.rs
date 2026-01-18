@@ -4,6 +4,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::llm::{self, Model};
+
 /// Authentication method for API providers
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum AuthMethod {
@@ -156,5 +158,15 @@ impl Provider {
             default_model: "anthropic/claude-3.5-sonnet".to_string(),
             enabled: true,
         }
+    }
+
+    /// Get the list of available models for this provider
+    pub fn models(&self) -> Vec<Model> {
+        llm::get_models_for_provider(&self.id)
+    }
+
+    /// Check if this provider has a native implementation
+    pub fn is_implemented(&self) -> bool {
+        matches!(self.id.as_str(), "anthropic")
     }
 }

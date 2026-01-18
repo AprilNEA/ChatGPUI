@@ -175,14 +175,14 @@ impl Render for ChatApp {
             .child(
                 h_flex()
                     .absolute()
-                    .top(px(10.))
-                    .left(px(78.)) // After traffic lights
-                    .gap_1()
+                    .top(px(6.))
+                    .left(px(80.)) // After traffic lights
+                    .gap_0()
                     .child(
                         Button::new("toggle-sidebar")
                             .icon(IconName::PanelLeft)
                             .ghost()
-                            .small()
+                            .xsmall()
                             .on_click(cx.listener(|this, _, _window, cx| {
                                 this.toggle_sidebar(cx);
                             })),
@@ -191,7 +191,7 @@ impl Render for ChatApp {
                         Button::new("new-chat")
                             .icon(IconName::Plus)
                             .ghost()
-                            .small()
+                            .xsmall()
                             .on_click(cx.listener(|this, _, _window, cx| {
                                 this.new_chat(cx);
                             })),

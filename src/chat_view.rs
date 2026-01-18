@@ -7,9 +7,11 @@ use gpui_component::{ActiveTheme, v_flex};
 use gpui_tokio_bridge::Tokio;
 use uuid::Uuid;
 
+use std::sync::Arc;
+
 use crate::{
     database::{self, message as db_message},
-    llm_client::{LlmClient, StreamEventResult},
+    llm::{self, LlmProvider, StreamEvent},
     message::{ChatMessage, Message, MessageStatus, Role},
     message_input::{MessageInput, SubmitEvent},
     message_list::MessageList,
@@ -25,7 +27,8 @@ pub struct ChatView {
     messages: Vec<Message>,
     message_list: Entity<MessageList>,
     message_input: Entity<MessageInput>,
-    llm_client: Option<LlmClient>,
+    llm_provider: Option<Arc<dyn LlmProvider>>,
+    current_model_id: String,
     is_generating: bool,
     current_conversation_id: Option<Uuid>,
     _subscription: Subscription,
@@ -38,13 +41,17 @@ impl ChatView {
         let message_list = cx.new(|cx| MessageList::new(cx));
         let message_input = cx.new(|cx| MessageInput::new(window, cx));
 
-        // Try to create LLM client from settings first, then fallback to env
-        let llm_client = LlmClient::from_settings(cx)
-            .or_else(|_| LlmClient::from_env())
-            .ok();
-        if llm_client.is_none() {
-            tracing::warn!("No LLM provider configured. Please set up in Settings.");
-        }
+        // Try to create LLM provider from settings
+        let (llm_provider, current_model_id) = match llm::create_provider_from_settings(cx) {
+            Ok(provider) => {
+                let model_id = provider.default_model().id.clone();
+                (Some(provider), model_id)
+            }
+            Err(e) => {
+                tracing::warn!("No LLM provider configured: {}. Please set up in Settings.", e);
+                (None, String::new())
+            }
+        };
 
         let _subscription = cx.subscribe_in(
             &message_input,
@@ -61,7 +68,8 @@ impl ChatView {
             messages,
             message_list,
             message_input,
-            llm_client,
+            llm_provider,
+            current_model_id,
             is_generating: false,
             current_conversation_id: None,
             _subscription,
@@ -243,14 +251,15 @@ impl ChatView {
     }
 
     fn generate_response(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
-        // Try to reload client if not available (user may have configured it)
-        if self.llm_client.is_none() {
-            self.llm_client = LlmClient::from_settings(cx)
-                .or_else(|_| LlmClient::from_env())
-                .ok();
+        // Try to reload provider if not available (user may have configured it)
+        if self.llm_provider.is_none() {
+            if let Ok(provider) = llm::create_provider_from_settings(cx) {
+                self.current_model_id = provider.default_model().id.clone();
+                self.llm_provider = Some(provider);
+            }
         }
 
-        let Some(client) = self.llm_client.clone() else {
+        let Some(provider) = self.llm_provider.clone() else {
             self.messages.push(Message {
                 id: uuid::Uuid::new_v4(),
                 role: Role::Assistant,
@@ -279,10 +288,11 @@ impl ChatView {
             .collect();
 
         let (tx, rx) = async_channel::unbounded();
+        let model_id = self.current_model_id.clone();
 
         // Spawn the HTTP request on Tokio runtime
         Tokio::spawn(cx, async move {
-            if let Err(e) = client.stream_chat(messages, tx).await {
+            if let Err(e) = provider.stream_chat(&model_id, messages, tx).await {
                 tracing::error!("Stream error: {}", e);
             }
         })
@@ -292,7 +302,7 @@ impl ChatView {
         cx.spawn(async move |this, cx| {
             while let Ok(event) = rx.recv().await {
                 match event {
-                    StreamEventResult::Delta(content) => {
+                    StreamEvent::Delta(content) => {
                         let _ = cx.update(|app| {
                             let _ = this.update(app, |this, cx| {
                                 if let Some(msg) = this.messages.last_mut() {
@@ -304,7 +314,7 @@ impl ChatView {
                             });
                         });
                     }
-                    StreamEventResult::Done => {
+                    StreamEvent::Done => {
                         let _ = cx.update(|app| {
                             let _ = this.update(app, |this, cx| {
                                 if let Some(msg) = this.messages.last_mut() {
@@ -315,7 +325,7 @@ impl ChatView {
                         });
                         break;
                     }
-                    StreamEventResult::Error(err) => {
+                    StreamEvent::Error(err) => {
                         let _ = cx.update(|app| {
                             let _ = this.update(app, |this, cx| {
                                 if let Some(msg) = this.messages.last_mut() {
@@ -348,18 +358,33 @@ impl ChatView {
         self.update_message_list(cx);
     }
 
-    /// Reload LLM client from settings (called when provider/model changes)
+    /// Reload LLM provider from settings (called when provider/model changes)
     pub fn reload_llm_client(&mut self, cx: &mut Context<Self>) {
-        self.llm_client = LlmClient::from_settings(cx)
-            .or_else(|_| LlmClient::from_env())
-            .ok();
-
-        if self.llm_client.is_none() {
-            tracing::warn!("No LLM provider configured after reload.");
-        } else {
-            tracing::info!("LLM client reloaded successfully.");
+        match llm::create_provider_from_settings(cx) {
+            Ok(provider) => {
+                self.current_model_id = provider.default_model().id.clone();
+                self.llm_provider = Some(provider);
+                tracing::info!("LLM provider reloaded successfully.");
+            }
+            Err(e) => {
+                self.llm_provider = None;
+                tracing::warn!("No LLM provider configured after reload: {}", e);
+            }
         }
         cx.notify();
+    }
+
+    /// Set the current model to use
+    pub fn set_model(&mut self, model_id: String, _cx: &mut Context<Self>) {
+        self.current_model_id = model_id;
+    }
+
+    /// Get available models from the current provider
+    pub fn available_models(&self) -> Vec<llm::Model> {
+        self.llm_provider
+            .as_ref()
+            .map(|p| p.models())
+            .unwrap_or_default()
     }
 
     fn update_message_list(&mut self, cx: &mut Context<Self>) {

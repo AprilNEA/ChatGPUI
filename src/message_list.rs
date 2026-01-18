@@ -35,10 +35,14 @@ impl Render for MessageList {
         v_flex()
             .id("message-list")
             .size_full()
+            .min_w_0()
+            .overflow_x_hidden()
             .overflow_y_scroll()
             .child(
                 v_flex()
                     .w_full()
+                    .min_w_0()
+                    .overflow_hidden()
                     .p_4()
                     .gap_6()
                     .children(messages.into_iter().map(|msg| MessageItem::new(msg))),
@@ -83,6 +87,7 @@ impl RenderOnce for MessageItem {
             // Assistant messages: full-width, no bubble, direct Markdown rendering
             v_flex()
                 .w_full()
+                .overflow_hidden()
                 .gap_2()
                 .child(
                     // Optional: Add a subtle label for assistant
@@ -151,10 +156,13 @@ impl RenderOnce for MessageItem {
                         if let MessageStatus::Error(ref err) = self.message.status {
                             this.child(
                                 h_flex()
+                                    .w_full()
+                                    .overflow_hidden()
                                     .gap_2()
-                                    .items_center()
+                                    .items_start()
                                     .child(
                                         div()
+                                            .flex_shrink_0()
                                             .size_4()
                                             .rounded_full()
                                             .bg(theme.danger)
@@ -166,9 +174,16 @@ impl RenderOnce for MessageItem {
                                             .child("!"),
                                     )
                                     .child(
-                                        Label::new(format!("Error: {}", err))
-                                            .text_sm()
-                                            .text_color(theme.danger),
+                                        div()
+                                            .flex_1()
+                                            .min_w_0()
+                                            .overflow_hidden()
+                                            .text_ellipsis()
+                                            .child(
+                                                Label::new(format!("Error: {}", err))
+                                                    .text_sm()
+                                                    .text_color(theme.danger),
+                                            ),
                                     ),
                             )
                         } else {
