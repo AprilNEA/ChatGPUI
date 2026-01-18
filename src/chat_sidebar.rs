@@ -5,13 +5,14 @@
 use chrono::{Datelike, Local};
 use gpui::*;
 use gpui_component::{
+    ActiveTheme, Icon, IconName, Sizable,
     button::{Button, ButtonVariants},
     h_flex,
     input::{Input, InputState},
     label::Label,
     list::ListItem,
     scroll::ScrollableElement,
-    v_flex, ActiveTheme, Icon, IconName, Sizable,
+    v_flex,
 };
 use gpui_tokio_bridge::Tokio;
 use uuid::Uuid;
@@ -167,16 +168,12 @@ impl ChatSidebar {
     }
 
     fn render_search(&mut self, _cx: &mut Context<Self>) -> impl IntoElement {
-        h_flex()
-            .w_full()
-            .px_3()
-            .pb_2()
-            .child(
-                Input::new(&self.search_input)
-                    .prefix(Icon::new(IconName::Search).size_4())
-                    .xsmall()
-                    .appearance(false),
-            )
+        h_flex().w_full().px_3().pb_2().child(
+            Input::new(&self.search_input)
+                .prefix(Icon::new(IconName::Search).size_4())
+                .xsmall()
+                .appearance(false),
+        )
     }
 
     fn render_quick_tags(&mut self, cx: &mut Context<Self>) -> impl IntoElement {

@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use futures::StreamExt;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
@@ -145,9 +145,12 @@ impl LlmClient {
 
         if !response.status().is_success() {
             let error_text = response.text().await.unwrap_or_default();
-            tx.send(StreamEventResult::Error(format!("API error: {}", error_text)))
-                .await
-                .ok();
+            tx.send(StreamEventResult::Error(format!(
+                "API error: {}",
+                error_text
+            )))
+            .await
+            .ok();
             return Err(anyhow!("API error: {}", error_text));
         }
 
@@ -182,9 +185,11 @@ impl LlmClient {
                                 return Ok(());
                             }
                             "error" => {
-                                tx.send(StreamEventResult::Error(t!("error.stream_error").to_string()))
-                                    .await
-                                    .ok();
+                                tx.send(StreamEventResult::Error(
+                                    t!("error.stream_error").to_string(),
+                                ))
+                                .await
+                                .ok();
                                 return Ok(());
                             }
                             _ => {}

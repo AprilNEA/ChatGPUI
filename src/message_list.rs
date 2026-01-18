@@ -2,14 +2,10 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 
-use gpui::*;
 use gpui::prelude::FluentBuilder;
+use gpui::*;
 use gpui_component::{
-    h_flex, v_flex,
-    label::Label,
-    scroll::ScrollableElement,
-    skeleton::Skeleton,
-    ActiveTheme,
+    ActiveTheme, h_flex, label::Label, scroll::ScrollableElement, skeleton::Skeleton, v_flex,
 };
 
 use crate::message::{Message, MessageStatus, Role};

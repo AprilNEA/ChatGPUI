@@ -3,11 +3,12 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 
 use gpui::{
-    actions, prelude::FluentBuilder, px, size, App, AppContext, Bounds, Context, Entity,
-    FontWeight, IntoElement, ParentElement, Render, Styled, Subscription, Window, WindowBounds,
-    WindowKind, WindowOptions, TitlebarOptions,
+    App, AppContext, Bounds, Context, Entity, FontWeight, IntoElement, ParentElement, Render,
+    Styled, Subscription, TitlebarOptions, Window, WindowBounds, WindowKind, WindowOptions,
+    actions, prelude::FluentBuilder, px, size,
 };
 use gpui_component::{
+    ActiveTheme, Icon, IconName, Root, Sizable,
     button::{Button, ButtonVariants},
     divider::Divider,
     h_flex,
@@ -15,10 +16,10 @@ use gpui_component::{
     label::Label,
     list::ListItem,
     scroll::ScrollableElement,
-    v_flex, ActiveTheme, Icon, IconName, Root, Sizable,
+    v_flex,
 };
 
-use super::{get_settings, update_settings, AuthMethod};
+use super::{AuthMethod, get_settings, update_settings};
 
 /// Settings navigation category
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -78,7 +79,9 @@ pub struct SettingsView {
 
 impl SettingsView {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let api_key_input = cx.new(|cx| InputState::new(window, cx).placeholder(t!("settings.api_key_placeholder").to_string()));
+        let api_key_input = cx.new(|cx| {
+            InputState::new(window, cx).placeholder(t!("settings.api_key_placeholder").to_string())
+        });
         let base_url_input = cx.new(|cx| InputState::new(window, cx).placeholder("API Base URL"));
 
         // Load initial provider
@@ -169,7 +172,12 @@ impl SettingsView {
         cx.notify();
     }
 
-    fn select_provider(&mut self, provider_id: String, window: &mut Window, cx: &mut Context<Self>) {
+    fn select_provider(
+        &mut self,
+        provider_id: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         // Save current values before switching
         self.save_api_key(cx);
         self.save_base_url(cx);
@@ -195,25 +203,30 @@ impl SettingsView {
             .bg(theme.sidebar)
             .border_r_1()
             .border_color(theme.border)
-            .children(SettingsCategory::all().into_iter().enumerate().map(|(idx, category)| {
-                let is_selected = category == current;
-                ListItem::new(("category", idx))
-                    .px_3()
-                    .py_1()
-                    .mx_2()
-                    .rounded_md()
-                    .selected(is_selected)
-                    .on_click(cx.listener(move |this, _, _window, cx| {
-                        this.select_category(category, cx);
-                    }))
-                    .child(
-                        h_flex()
-                            .gap_2()
-                            .items_center()
-                            .child(Icon::new(category.icon()).size_4())
-                            .child(Label::new(category.label())),
-                    )
-            }))
+            .children(
+                SettingsCategory::all()
+                    .into_iter()
+                    .enumerate()
+                    .map(|(idx, category)| {
+                        let is_selected = category == current;
+                        ListItem::new(("category", idx))
+                            .px_3()
+                            .py_1()
+                            .mx_2()
+                            .rounded_md()
+                            .selected(is_selected)
+                            .on_click(cx.listener(move |this, _, _window, cx| {
+                                this.select_category(category, cx);
+                            }))
+                            .child(
+                                h_flex()
+                                    .gap_2()
+                                    .items_center()
+                                    .child(Icon::new(category.icon()).size_4())
+                                    .child(Label::new(category.label())),
+                            )
+                    }),
+            )
     }
 
     fn render_provider_list(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -239,32 +252,33 @@ impl SettingsView {
             )
             .child(Divider::horizontal())
             .child(
-                v_flex()
-                    .flex_1()
-                    .overflow_y_scrollbar()
-                    .py_1()
-                    .children(providers.into_iter().enumerate().map(|(idx, (provider_id, provider_name))| {
-                        let is_selected = selected_id.as_ref() == Some(&provider_id);
-                        let id_clone = provider_id.clone();
+                v_flex().flex_1().overflow_y_scrollbar().py_1().children(
+                    providers
+                        .into_iter()
+                        .enumerate()
+                        .map(|(idx, (provider_id, provider_name))| {
+                            let is_selected = selected_id.as_ref() == Some(&provider_id);
+                            let id_clone = provider_id.clone();
 
-                        ListItem::new(("provider", idx))
-                            .px_3()
-                            .py_2()
-                            .mx_2()
-                            .my_px()
-                            .rounded_md()
-                            .selected(is_selected)
-                            .on_click(cx.listener(move |this, _, window, cx| {
-                                this.select_provider(id_clone.clone(), window, cx);
-                            }))
-                            .child(
-                                h_flex()
-                                    .gap_2()
-                                    .items_center()
-                                    .child(self.provider_icon(&provider_id))
-                                    .child(Label::new(provider_name)),
-                            )
-                    })),
+                            ListItem::new(("provider", idx))
+                                .px_3()
+                                .py_2()
+                                .mx_2()
+                                .my_px()
+                                .rounded_md()
+                                .selected(is_selected)
+                                .on_click(cx.listener(move |this, _, window, cx| {
+                                    this.select_provider(id_clone.clone(), window, cx);
+                                }))
+                                .child(
+                                    h_flex()
+                                        .gap_2()
+                                        .items_center()
+                                        .child(self.provider_icon(&provider_id))
+                                        .child(Label::new(provider_name)),
+                                )
+                        }),
+                ),
             )
             .child(Divider::horizontal())
             .child(
@@ -337,20 +351,13 @@ impl SettingsView {
             .overflow_y_scrollbar()
             .child(
                 // Provider header
-                h_flex()
-                    .px_6()
-                    .py_4()
-                    .justify_between()
-                    .child(
-                        h_flex()
-                            .gap_2()
-                            .items_center()
-                            .child(
-                                Label::new(provider_name)
-                                    .text_lg()
-                                    .font_weight(FontWeight::MEDIUM),
-                            ),
+                h_flex().px_6().py_4().justify_between().child(
+                    h_flex().gap_2().items_center().child(
+                        Label::new(provider_name)
+                            .text_lg()
+                            .font_weight(FontWeight::MEDIUM),
                     ),
+                ),
             )
             .child(Divider::horizontal())
             .child(
@@ -422,10 +429,7 @@ impl SettingsView {
                                     .text_sm()
                                     .text_color(theme.muted_foreground),
                             )
-                            .child(
-                                Input::new(&self.base_url_input)
-                                    .cleanable(true),
-                            ),
+                            .child(Input::new(&self.base_url_input).cleanable(true)),
                     ),
             )
             .into_any_element()
@@ -457,18 +461,18 @@ impl SettingsView {
     fn render_content(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
         match self.current_category {
             SettingsCategory::Provider => self.render_provider_page(cx).into_any_element(),
-            SettingsCategory::General => {
-                self.render_placeholder_page(t!("settings.general_settings").to_string(), cx).into_any_element()
-            }
-            SettingsCategory::Appearance => {
-                self.render_placeholder_page(t!("settings.appearance_settings").to_string(), cx).into_any_element()
-            }
-            SettingsCategory::Prompts => {
-                self.render_placeholder_page(t!("settings.prompts_settings").to_string(), cx).into_any_element()
-            }
-            SettingsCategory::Advanced => {
-                self.render_placeholder_page(t!("settings.advanced_settings").to_string(), cx).into_any_element()
-            }
+            SettingsCategory::General => self
+                .render_placeholder_page(t!("settings.general_settings").to_string(), cx)
+                .into_any_element(),
+            SettingsCategory::Appearance => self
+                .render_placeholder_page(t!("settings.appearance_settings").to_string(), cx)
+                .into_any_element(),
+            SettingsCategory::Prompts => self
+                .render_placeholder_page(t!("settings.prompts_settings").to_string(), cx)
+                .into_any_element(),
+            SettingsCategory::Advanced => self
+                .render_placeholder_page(t!("settings.advanced_settings").to_string(), cx)
+                .into_any_element(),
         }
     }
 }

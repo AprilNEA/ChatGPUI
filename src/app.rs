@@ -5,10 +5,12 @@
 use std::time::Duration;
 
 use gpui::*;
-use gpui_component::{h_flex, v_flex, ActiveTheme};
+use gpui_component::{ActiveTheme, h_flex, v_flex};
 use gpui_tokio_bridge::Tokio;
 
-use crate::chat_sidebar::{ChatSidebar, ConversationSelectedEvent, NewChatEvent, SidebarToggleEvent};
+use crate::chat_sidebar::{
+    ChatSidebar, ConversationSelectedEvent, NewChatEvent, SidebarToggleEvent,
+};
 use crate::chat_view::{ChatView, ConversationUpdatedEvent};
 use crate::database;
 use crate::model_selector::{ModelSelector, ModelSelectorChangedEvent};
@@ -135,7 +137,8 @@ impl Render for ChatApp {
                     .child(self.sidebar.clone())
                     .with_animation(
                         ElementId::Name(
-                            format!("sidebar-{}", if collapsed { "collapse" } else { "expand" }).into(),
+                            format!("sidebar-{}", if collapsed { "collapse" } else { "expand" })
+                                .into(),
                         ),
                         Animation::new(SIDEBAR_ANIMATION_DURATION),
                         move |el, delta| {

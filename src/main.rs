@@ -24,7 +24,7 @@ use gpui::*;
 use gpui_component::Root;
 use gpui_component_assets::Assets;
 
-use settings::{open_settings_window, OpenSettings};
+use settings::{OpenSettings, open_settings_window};
 
 actions!(app, [Quit]);
 
@@ -111,18 +111,16 @@ fn main() {
         ]);
 
         // Set up menu bar
-        cx.set_menus(vec![
-            Menu {
-                name: t!("app.name").to_string().into(),
-                items: vec![
-                    MenuItem::action(t!("app.about").to_string(), Quit),
-                    MenuItem::separator(),
-                    MenuItem::action(t!("app.settings").to_string(), OpenSettings),
-                    MenuItem::separator(),
-                    MenuItem::action(t!("app.quit").to_string(), Quit),
-                ],
-            },
-        ]);
+        cx.set_menus(vec![Menu {
+            name: t!("app.name").to_string().into(),
+            items: vec![
+                MenuItem::action(t!("app.about").to_string(), Quit),
+                MenuItem::separator(),
+                MenuItem::action(t!("app.settings").to_string(), OpenSettings),
+                MenuItem::separator(),
+                MenuItem::action(t!("app.quit").to_string(), Quit),
+            ],
+        }]);
 
         cx.spawn(async move |cx| {
             cx.update(|cx| {

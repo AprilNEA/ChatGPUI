@@ -126,7 +126,11 @@ impl DatabaseService {
     }
 
     /// Update message content
-    pub async fn update_message_content(&self, id: Uuid, content: String) -> Result<message::Model> {
+    pub async fn update_message_content(
+        &self,
+        id: Uuid,
+        content: String,
+    ) -> Result<message::Model> {
         let conn = self.get_connection().await?;
         MessageRepository::update_content(&conn, id, content).await
     }

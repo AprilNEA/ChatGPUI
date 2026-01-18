@@ -9,4 +9,4 @@ pub mod repository;
 pub mod service;
 
 pub use entity::{conversation, message};
-pub use service::{get_db, init, DatabaseService};
+pub use service::{DatabaseService, get_db, init};

@@ -4,10 +4,10 @@
 
 use gpui::*;
 use gpui_component::{
+    ActiveTheme, Icon, IconName, Sizable,
     button::{Button, ButtonVariants},
     h_flex,
     label::Label,
-    ActiveTheme, Icon, IconName, Sizable,
 };
 
 use crate::settings::{get_settings, update_settings};
@@ -29,9 +29,7 @@ impl ModelSelector {
     pub fn new(cx: &mut Context<Self>) -> Self {
         let settings = get_settings(cx);
         let selected_provider_id = settings.active_provider_id.clone();
-        let selected_model = settings
-            .active_provider()
-            .map(|p| p.default_model.clone());
+        let selected_model = settings.active_provider().map(|p| p.default_model.clone());
 
         Self {
             selected_provider_id,
@@ -52,7 +50,10 @@ impl ModelSelector {
             }
         }
 
-        (t!("menu.select_model").to_string(), t!("menu.not_configured").to_string())
+        (
+            t!("menu.select_model").to_string(),
+            t!("menu.not_configured").to_string(),
+        )
     }
 }
 
@@ -76,19 +77,17 @@ impl Render for ModelSelector {
                     .gap_1()
                     .items_center()
                     .child(
-                        Button::new("model-trigger")
-                            .ghost()
-                            .child(
-                                h_flex()
-                                    .gap_1()
-                                    .items_center()
-                                    .child(
-                                        Label::new(model_name)
-                                            .text_base()
-                                            .font_weight(FontWeight::MEDIUM),
-                                    )
-                                    .child(Icon::new(IconName::ChevronDown).size_4()),
-                            ),
+                        Button::new("model-trigger").ghost().child(
+                            h_flex()
+                                .gap_1()
+                                .items_center()
+                                .child(
+                                    Label::new(model_name)
+                                        .text_base()
+                                        .font_weight(FontWeight::MEDIUM),
+                                )
+                                .child(Icon::new(IconName::ChevronDown).size_4()),
+                        ),
                     )
                     .child(
                         Label::new(provider_name)
@@ -98,14 +97,12 @@ impl Render for ModelSelector {
             )
             .child(
                 // Right side: Actions
-                h_flex()
-                    .gap_1()
-                    .child(
-                        Button::new("toggle-panel")
-                            .icon(IconName::PanelRight)
-                            .ghost()
-                            .small(),
-                    ),
+                h_flex().gap_1().child(
+                    Button::new("toggle-panel")
+                        .icon(IconName::PanelRight)
+                        .ghost()
+                        .small(),
+                ),
             )
     }
 }

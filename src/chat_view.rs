@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 
 use gpui::*;
-use gpui_component::{v_flex, ActiveTheme};
+use gpui_component::{ActiveTheme, v_flex};
 use gpui_tokio_bridge::Tokio;
 use uuid::Uuid;
 
@@ -46,10 +46,13 @@ impl ChatView {
             tracing::warn!("No LLM provider configured. Please set up in Settings.");
         }
 
-        let _subscription =
-            cx.subscribe_in(&message_input, window, |this, _, event: &SubmitEvent, window, cx| {
+        let _subscription = cx.subscribe_in(
+            &message_input,
+            window,
+            |this, _, event: &SubmitEvent, window, cx| {
                 this.handle_user_message(event.0.clone(), window, cx);
-            });
+            },
+        );
 
         let mut messages = Vec::new();
         messages.push(Message::system("You are a helpful assistant."));
@@ -68,7 +71,8 @@ impl ChatView {
     /// Start a new chat (clear messages and conversation)
     pub fn new_chat(&mut self, cx: &mut Context<Self>) {
         self.messages.clear();
-        self.messages.push(Message::system("You are a helpful assistant."));
+        self.messages
+            .push(Message::system("You are a helpful assistant."));
         self.current_conversation_id = None;
         self.update_message_list(cx);
     }
@@ -77,7 +81,8 @@ impl ChatView {
     pub fn load_conversation(&mut self, conversation_id: Uuid, cx: &mut Context<Self>) {
         self.current_conversation_id = Some(conversation_id);
         self.messages.clear();
-        self.messages.push(Message::system("You are a helpful assistant."));
+        self.messages
+            .push(Message::system("You are a helpful assistant."));
 
         let db = database::get_db(cx).clone();
         let (tx, rx) = async_channel::unbounded();
@@ -206,7 +211,13 @@ impl ChatView {
         .detach();
     }
 
-    fn save_message_to_db(&self, _message_id: Uuid, role: Role, content: String, cx: &mut Context<Self>) {
+    fn save_message_to_db(
+        &self,
+        _message_id: Uuid,
+        role: Role,
+        content: String,
+        cx: &mut Context<Self>,
+    ) {
         let Some(conversation_id) = self.current_conversation_id else {
             return;
         };

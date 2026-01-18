@@ -4,10 +4,11 @@
 
 use gpui::*;
 use gpui_component::{
-    button::{Button, ButtonVariants},
-    h_flex, v_flex,
-    input::{Input, InputEvent, InputState},
     ActiveTheme, Disableable, IconName, Sizable,
+    button::{Button, ButtonVariants},
+    h_flex,
+    input::{Input, InputEvent, InputState},
+    v_flex,
 };
 
 pub struct MessageInput {
@@ -27,11 +28,15 @@ impl MessageInput {
                 .clean_on_escape()
         });
 
-        cx.subscribe_in(&input_state, window, |this, _, event: &InputEvent, window, cx| {
-            if let InputEvent::PressEnter { secondary: _ } = event {
-                this.handle_submit(window, cx);
-            }
-        })
+        cx.subscribe_in(
+            &input_state,
+            window,
+            |this, _, event: &InputEvent, window, cx| {
+                if let InputEvent::PressEnter { secondary: _ } = event {
+                    this.handle_submit(window, cx);
+                }
+            },
+        )
         .detach();
 
         Self {
@@ -78,11 +83,9 @@ impl Render for MessageInput {
             .border_color(theme.border)
             .bg(theme.background)
             .child(
-                v_flex().flex_1().child(
-                    Input::new(&self.input_state)
-                        .large()
-                        .disabled(is_loading),
-                ),
+                v_flex()
+                    .flex_1()
+                    .child(Input::new(&self.input_state).large().disabled(is_loading)),
             )
             .child(
                 Button::new("send")
