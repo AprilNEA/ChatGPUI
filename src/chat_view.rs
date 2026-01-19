@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use gpui::*;
 use gpui_component::{ActiveTheme, v_flex};
@@ -39,11 +39,16 @@ struct ActiveStream {
     message_id: Uuid,
     conversation_id: Option<Uuid>,
     content: String,
+    thinking_content: String,
+    thinking_start_time: Option<Instant>,
+    thinking_duration_ms: Option<u64>,
 }
 
 struct PendingStreamResult {
     message_id: Uuid,
     content: String,
+    thinking_content: Option<String>,
+    thinking_duration_ms: Option<u64>,
     error: Option<String>,
     ui_applied: bool,
 }
@@ -208,6 +213,8 @@ impl ChatView {
                                 attachments,
                                 status,
                                 created_at: msg.created_at,
+                                thinking_content: msg.thinking_content,
+                                thinking_duration_ms: None,
                             }));
                         }
                         this.update_message_list(cx);
@@ -435,6 +442,37 @@ impl ChatView {
         .detach();
     }
 
+    fn save_message_with_thinking_to_db(
+        &self,
+        conversation_id: Uuid,
+        message_id: Uuid,
+        role: Role,
+        content: String,
+        thinking_content: Option<String>,
+        cx: &mut Context<Self>,
+    ) {
+        let db = database::get_db(cx).clone();
+        let db_role = match role {
+            Role::System => db_message::MessageRole::System,
+            Role::User => db_message::MessageRole::User,
+            Role::Assistant => db_message::MessageRole::Assistant,
+        };
+
+        Tokio::spawn(cx, async move {
+            let _ = db
+                .create_message_with_thinking(
+                    message_id,
+                    conversation_id,
+                    db_role,
+                    content,
+                    db_message::MessageStatus::Done,
+                    thinking_content,
+                )
+                .await;
+        })
+        .detach();
+    }
+
     fn generate_response(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
         // Try to reload provider if not available (user may have configured it)
         if self.llm_provider.is_none()
@@ -452,6 +490,8 @@ impl ChatView {
                 attachments: Vec::new(),
                 status: MessageStatus::Error("Provider not configured".to_string()),
                 created_at: chrono::Utc::now(),
+                thinking_content: None,
+                thinking_duration_ms: None,
             }));
             self.update_message_list(cx);
             return;
@@ -471,6 +511,9 @@ impl ChatView {
             message_id: streaming_message.id,
             conversation_id: self.current_conversation_id,
             content: String::new(),
+            thinking_content: String::new(),
+            thinking_start_time: None,
+            thinking_duration_ms: None,
         });
         self.message_list.update(cx, |list, cx| {
             list.start_streaming(streaming_message, cx);
@@ -499,6 +542,48 @@ impl ChatView {
         cx.spawn(async move |this, cx| {
             while let Ok(event) = rx.recv().await {
                 match event {
+                    StreamEvent::ThinkingDelta(content) => {
+                        let _ = cx.update(|app| {
+                            let _ = this.update(app, |this, cx| {
+                                if let Some(stream) = this.active_stream.as_mut() {
+                                    // Start thinking timer on first thinking delta
+                                    if stream.thinking_start_time.is_none() {
+                                        stream.thinking_start_time = Some(Instant::now());
+                                    }
+                                    stream.thinking_content.push_str(&content);
+                                }
+                                if this.stream_is_current() {
+                                    // Update thinking content in UI
+                                    this.message_list.update(cx, |list, cx| {
+                                        list.update_thinking_content(&content, cx);
+                                    });
+                                }
+                            });
+                        });
+                    }
+                    StreamEvent::ThinkingDone => {
+                        let _ = cx.update(|app| {
+                            let _ = this.update(app, |this, cx| {
+                                if let Some(stream) = this.active_stream.as_mut() {
+                                    // Calculate thinking duration
+                                    if let Some(start_time) = stream.thinking_start_time.take() {
+                                        stream.thinking_duration_ms =
+                                            Some(start_time.elapsed().as_millis() as u64);
+                                    }
+                                }
+                                if this.stream_is_current() {
+                                    // Mark thinking as done in UI
+                                    this.message_list.update(cx, |list, cx| {
+                                        let duration = this
+                                            .active_stream
+                                            .as_ref()
+                                            .and_then(|s| s.thinking_duration_ms);
+                                        list.finish_thinking(duration, cx);
+                                    });
+                                }
+                            });
+                        });
+                    }
                     StreamEvent::Delta(content) => {
                         let _ = cx.update(|app| {
                             let _ = this.update(app, |this, cx| {
@@ -554,6 +639,7 @@ impl ChatView {
         conversation_id: Uuid,
         message_id: Uuid,
         content: String,
+        thinking_content: Option<String>,
         cx: &mut Context<Self>,
     ) {
         self.is_generating = false;
@@ -566,8 +652,15 @@ impl ChatView {
         self.pending_stream_chunk.clear();
         self.active_stream = None;
 
-        // Save assistant message to database
-        self.save_message_to_db_for(conversation_id, message_id, Role::Assistant, content, cx);
+        // Save assistant message to database (with thinking content)
+        self.save_message_with_thinking_to_db(
+            conversation_id,
+            message_id,
+            Role::Assistant,
+            content,
+            thinking_content,
+            cx,
+        );
 
         cx.notify();
     }
@@ -607,6 +700,8 @@ impl ChatView {
             attachments: Vec::new(),
             status: MessageStatus::Streaming,
             created_at: chrono::Utc::now(),
+            thinking_content: None,
+            thinking_duration_ms: None,
         };
 
         self.message_list.update(cx, |list, cx| {
@@ -614,11 +709,14 @@ impl ChatView {
         });
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn complete_stream_result(
         &mut self,
         conversation_id: Uuid,
         message_id: Uuid,
         content: String,
+        thinking_content: Option<String>,
+        thinking_duration_ms: Option<u64>,
         error: Option<String>,
         cx: &mut Context<Self>,
     ) {
@@ -651,10 +749,18 @@ impl ChatView {
                 attachments: Vec::new(),
                 status: MessageStatus::Done,
                 created_at: chrono::Utc::now(),
+                thinking_content: thinking_content.clone(),
+                thinking_duration_ms,
             }));
         }
 
-        self.finish_generating_with_content_for(conversation_id, message_id, content, cx);
+        self.finish_generating_with_content_for(
+            conversation_id,
+            message_id,
+            content,
+            thinking_content,
+            cx,
+        );
 
         if !is_current {
             cx.emit(BackgroundStreamFinishedEvent {
@@ -672,11 +778,25 @@ impl ChatView {
         let conversation_id = stream.conversation_id;
         let message_id = stream.message_id;
         let content = stream.content;
+        let thinking_content = if stream.thinking_content.is_empty() {
+            None
+        } else {
+            Some(stream.thinking_content)
+        };
+        let thinking_duration_ms = stream.thinking_duration_ms;
 
         let is_current = self.is_current_conversation(conversation_id);
 
         if let Some(conversation_id) = conversation_id {
-            self.complete_stream_result(conversation_id, message_id, content, error, cx);
+            self.complete_stream_result(
+                conversation_id,
+                message_id,
+                content,
+                thinking_content,
+                thinking_duration_ms,
+                error,
+                cx,
+            );
             return;
         }
 
@@ -697,12 +817,16 @@ impl ChatView {
                 attachments: Vec::new(),
                 status: MessageStatus::Done,
                 created_at: chrono::Utc::now(),
+                thinking_content: thinking_content.clone(),
+                thinking_duration_ms,
             }));
         }
 
         self.pending_stream_result = Some(PendingStreamResult {
             message_id,
             content,
+            thinking_content,
+            thinking_duration_ms,
             error,
             ui_applied: is_current,
         });
@@ -720,6 +844,7 @@ impl ChatView {
                     conversation_id,
                     result.message_id,
                     result.content,
+                    result.thinking_content,
                     cx,
                 );
             }
@@ -730,6 +855,8 @@ impl ChatView {
             conversation_id,
             result.message_id,
             result.content,
+            result.thinking_content,
+            result.thinking_duration_ms,
             result.error,
             cx,
         );

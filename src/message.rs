@@ -66,6 +66,10 @@ pub struct Message {
     pub status: MessageStatus,
     #[allow(dead_code)]
     pub created_at: DateTime<Utc>,
+    /// Extended thinking content (for Claude models)
+    pub thinking_content: Option<String>,
+    /// Time spent thinking in milliseconds
+    pub thinking_duration_ms: Option<u64>,
 }
 
 impl Message {
@@ -77,6 +81,8 @@ impl Message {
             attachments: Vec::new(),
             status: MessageStatus::Done,
             created_at: Utc::now(),
+            thinking_content: None,
+            thinking_duration_ms: None,
         }
     }
 
@@ -92,6 +98,8 @@ impl Message {
             attachments,
             status: MessageStatus::Done,
             created_at: Utc::now(),
+            thinking_content: None,
+            thinking_duration_ms: None,
         }
     }
 
@@ -108,6 +116,8 @@ impl Message {
             attachments: Vec::new(),
             status: MessageStatus::Streaming,
             created_at: Utc::now(),
+            thinking_content: None,
+            thinking_duration_ms: None,
         }
     }
 

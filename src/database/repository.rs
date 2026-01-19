@@ -118,6 +118,36 @@ impl MessageRepository {
             status: Set(status),
             error_message: Set(None),
             created_at: Set(Utc::now()),
+            thinking_content: Set(None),
+        };
+
+        let result = msg.insert(db).await?;
+
+        // Touch conversation to update timestamp
+        ConversationRepository::touch(db, conversation_id).await?;
+
+        Ok(result)
+    }
+
+    /// Create a new message with thinking content
+    pub async fn create_with_thinking(
+        db: &DatabaseConnection,
+        id: Uuid,
+        conversation_id: Uuid,
+        role: message::MessageRole,
+        content: String,
+        status: message::MessageStatus,
+        thinking_content: Option<String>,
+    ) -> Result<message::Model> {
+        let msg = message::ActiveModel {
+            id: Set(id),
+            conversation_id: Set(conversation_id),
+            role: Set(role),
+            content: Set(content),
+            status: Set(status),
+            error_message: Set(None),
+            created_at: Set(Utc::now()),
+            thinking_content: Set(thinking_content),
         };
 
         let result = msg.insert(db).await?;

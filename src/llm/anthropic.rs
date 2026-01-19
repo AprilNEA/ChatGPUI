@@ -52,6 +52,15 @@ struct AnthropicRequest {
     stream: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     system: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    thinking: Option<ThinkingConfig>,
+}
+
+#[derive(Debug, Serialize)]
+struct ThinkingConfig {
+    #[serde(rename = "type")]
+    thinking_type: String,
+    budget_tokens: u32,
 }
 
 #[derive(Debug, Serialize)]
@@ -89,6 +98,8 @@ struct AnthropicStreamEvent {
     #[serde(rename = "type")]
     event_type: String,
     delta: Option<AnthropicDelta>,
+    content_block: Option<AnthropicContentBlockInfo>,
+    index: Option<u32>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -97,6 +108,13 @@ struct AnthropicDelta {
     #[serde(rename = "type")]
     delta_type: Option<String>,
     text: Option<String>,
+    thinking: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct AnthropicContentBlockInfo {
+    #[serde(rename = "type")]
+    block_type: String,
 }
 
 impl AnthropicProvider {
@@ -247,6 +265,14 @@ impl AnthropicProvider {
             .find(|m| m.id == model_id)
             .cloned()
     }
+
+    /// Check if model supports extended thinking
+    fn supports_thinking(model_id: &str) -> bool {
+        // Extended thinking is supported on Claude 3.5 Sonnet and newer models
+        model_id.contains("claude-3-5-sonnet")
+            || model_id.contains("claude-sonnet-4")
+            || model_id.contains("claude-opus-4")
+    }
 }
 
 #[async_trait]
@@ -353,12 +379,30 @@ impl LlmProvider for AnthropicProvider {
             .and_then(|m| m.max_output_tokens)
             .unwrap_or(4096);
 
+        // Enable thinking for supported models (Claude 3.5 Sonnet and newer)
+        let use_thinking = Self::supports_thinking(model_id);
+        let (thinking, final_max_tokens) = if use_thinking {
+            let thinking_budget = 10000u32;
+            // max_tokens must be greater than thinking budget_tokens
+            let adjusted_max_tokens = max_tokens.max(thinking_budget + 4096);
+            (
+                Some(ThinkingConfig {
+                    thinking_type: "enabled".to_string(),
+                    budget_tokens: thinking_budget,
+                }),
+                adjusted_max_tokens,
+            )
+        } else {
+            (None, max_tokens)
+        };
+
         let request = AnthropicRequest {
             model: model_id.to_string(),
             messages: anthropic_messages,
-            max_tokens,
+            max_tokens: final_max_tokens,
             stream: true,
             system: system_msg,
+            thinking,
         };
 
         // Debug: log masked API key info
@@ -375,15 +419,19 @@ impl LlmProvider for AnthropicProvider {
         };
         tracing::debug!("Making API request to {} with key: {}", url, key_preview);
 
-        let response = self
+        let mut req_builder = self
             .client
             .post(&url)
             .header("x-api-key", &self.config.api_key)
             .header("anthropic-version", "2023-06-01")
-            .header("Content-Type", "application/json")
-            .json(&request)
-            .send()
-            .await?;
+            .header("Content-Type", "application/json");
+
+        // Add beta header for extended thinking
+        if use_thinking {
+            req_builder = req_builder.header("anthropic-beta", "interleaved-thinking-2025-05-14");
+        }
+
+        let response = req_builder.json(&request).send().await?;
 
         if !response.status().is_success() {
             let error_text = response.text().await.unwrap_or_default();
@@ -394,6 +442,8 @@ impl LlmProvider for AnthropicProvider {
         }
 
         let mut stream = response.bytes_stream();
+        // Track which content block indices are thinking blocks
+        let mut thinking_block_indices = std::collections::HashSet::new();
 
         while let Some(chunk) = stream.next().await {
             let chunk = chunk?;
@@ -409,12 +459,44 @@ impl LlmProvider for AnthropicProvider {
 
                     if let Ok(event) = serde_json::from_str::<AnthropicStreamEvent>(data) {
                         match event.event_type.as_str() {
-                            "content_block_delta" => {
-                                if let Some(delta) = event.delta
-                                    && let Some(text) = delta.text
-                                    && !text.is_empty()
+                            "content_block_start" => {
+                                // Check if this is a thinking block
+                                if let Some(content_block) = &event.content_block
+                                    && content_block.block_type == "thinking"
+                                    && let Some(index) = event.index
                                 {
-                                    tx.send(StreamEvent::Delta(text)).await.ok();
+                                    thinking_block_indices.insert(index);
+                                    tracing::debug!("Started thinking block at index {}", index);
+                                }
+                            }
+                            "content_block_delta" => {
+                                if let Some(delta) = event.delta {
+                                    let is_thinking_block = event
+                                        .index
+                                        .is_some_and(|idx| thinking_block_indices.contains(&idx));
+
+                                    // Handle thinking delta
+                                    if let Some(thinking) = delta.thinking
+                                        && !thinking.is_empty()
+                                        && is_thinking_block
+                                    {
+                                        tx.send(StreamEvent::ThinkingDelta(thinking)).await.ok();
+                                    }
+                                    // Handle text delta
+                                    else if let Some(text) = delta.text
+                                        && !text.is_empty()
+                                    {
+                                        tx.send(StreamEvent::Delta(text)).await.ok();
+                                    }
+                                }
+                            }
+                            "content_block_stop" => {
+                                // Check if the stopped block was a thinking block
+                                if let Some(index) = event.index
+                                    && thinking_block_indices.remove(&index)
+                                {
+                                    tx.send(StreamEvent::ThinkingDone).await.ok();
+                                    tracing::debug!("Finished thinking block at index {}", index);
                                 }
                             }
                             "message_stop" => {

@@ -19,6 +19,7 @@ use gpui_component::{
     v_virtual_list,
 };
 use gpui_markdown::Markdown;
+use rust_i18n::t;
 use uuid::Uuid;
 
 use crate::message::{Message, MessageStatus, Role};
@@ -110,6 +111,8 @@ pub struct MessageList {
     pending_scroll_to_bottom: bool,
     /// Whether the view should keep following the bottom.
     stick_to_bottom: bool,
+    /// Force a one-time jump to bottom, ignoring auto-scroll setting.
+    force_scroll_to_bottom: bool,
     size_cache: HashMap<Uuid, MeasureEntry>,
     content_width: Option<Pixels>,
     last_scroll_offset: Pixels,
@@ -127,6 +130,7 @@ impl MessageList {
             scroll_handle: VirtualListScrollHandle::new(),
             pending_scroll_to_bottom: false,
             stick_to_bottom: true,
+            force_scroll_to_bottom: false,
             size_cache: HashMap::new(),
             content_width: None,
             last_scroll_offset: Pixels::ZERO,
@@ -191,6 +195,28 @@ impl MessageList {
         }
     }
 
+    /// Update thinking content for the streaming message.
+    pub fn update_thinking_content(&mut self, content: &str, cx: &mut Context<Self>) {
+        if let Some(item) = &self.streaming_item {
+            let chunk = content.to_string();
+            item.update(cx, move |item, cx| {
+                item.append_thinking_content(&chunk, cx);
+            });
+            self.refresh_streaming_size(cx);
+            cx.notify();
+        }
+    }
+
+    /// Mark thinking as done for the streaming message.
+    pub fn finish_thinking(&mut self, duration_ms: Option<u64>, cx: &mut Context<Self>) {
+        if let Some(item) = &self.streaming_item {
+            item.update(cx, move |item, cx| {
+                item.set_thinking_done(duration_ms, cx);
+            });
+            cx.notify();
+        }
+    }
+
     /// Finish streaming message and move it into history.
     pub fn finish_streaming(&mut self, cx: &mut Context<Self>) {
         if let Some(item) = self.streaming_item.take() {
@@ -235,6 +261,7 @@ impl MessageList {
 
     /// Force the list to scroll to the bottom on the next render.
     pub fn force_scroll_to_bottom(&mut self) {
+        self.force_scroll_to_bottom = true;
         self.pending_scroll_to_bottom = true;
         self.stick_to_bottom = true;
         self.last_scroll_offset = Pixels::ZERO;
@@ -505,7 +532,9 @@ impl Render for MessageList {
         let auto_scroll = get_settings(cx).auto_scroll;
         self.update_scroll_follow(auto_scroll);
 
-        if auto_scroll && (self.stick_to_bottom || self.pending_scroll_to_bottom) {
+        let should_scroll_to_bottom = self.force_scroll_to_bottom
+            || (auto_scroll && (self.stick_to_bottom || self.pending_scroll_to_bottom));
+        if should_scroll_to_bottom {
             let max_offset = self.scroll_handle.max_offset().height;
             let current_x = self.scroll_handle.offset().x;
             let target_y = if max_offset > Pixels::ZERO {
@@ -516,6 +545,9 @@ impl Render for MessageList {
             self.scroll_handle.set_offset(point(current_x, target_y));
         }
         self.pending_scroll_to_bottom = false;
+        if self.force_scroll_to_bottom && self.scroll_handle.bounds().size.height > Pixels::ZERO {
+            self.force_scroll_to_bottom = false;
+        }
 
         let view = cx.entity();
         v_virtual_list(
@@ -553,6 +585,9 @@ enum MessageSource {
         role: Role,
         content: String,
         status: MessageStatus,
+        thinking_content: String,
+        thinking_done: bool,
+        thinking_duration_ms: Option<u64>,
     },
 }
 
@@ -560,6 +595,8 @@ pub struct MessageItem {
     id: Uuid,
     element_id: SharedString,
     source: MessageSource,
+    /// Whether the thinking section is collapsed
+    thinking_collapsed: bool,
 }
 
 impl MessageItem {
@@ -568,6 +605,7 @@ impl MessageItem {
             id,
             element_id: SharedString::from(format!("message-{}", id)),
             source,
+            thinking_collapsed: true, // Default to collapsed
         }
     }
 
@@ -585,6 +623,9 @@ impl MessageItem {
                 role: message.role,
                 content: message.content,
                 status: message.status,
+                thinking_content: String::new(),
+                thinking_done: false,
+                thinking_duration_ms: None,
             },
         )
     }
@@ -646,6 +687,29 @@ impl MessageItem {
         }
     }
 
+    fn append_thinking_content(&mut self, chunk: &str, cx: &mut Context<Self>) {
+        if let MessageSource::Snapshot {
+            thinking_content, ..
+        } = &mut self.source
+        {
+            thinking_content.push_str(chunk);
+            cx.notify();
+        }
+    }
+
+    fn set_thinking_done(&mut self, duration_ms: Option<u64>, cx: &mut Context<Self>) {
+        if let MessageSource::Snapshot {
+            thinking_done,
+            thinking_duration_ms,
+            ..
+        } = &mut self.source
+        {
+            *thinking_done = true;
+            *thinking_duration_ms = duration_ms;
+            cx.notify();
+        }
+    }
+
     fn set_status(&mut self, status: MessageStatus, cx: &mut Context<Self>) {
         if let MessageSource::Snapshot {
             status: current_status,
@@ -655,6 +719,43 @@ impl MessageItem {
             *current_status = status;
             cx.notify();
         }
+    }
+
+    fn thinking_content(&self) -> Option<&str> {
+        match &self.source {
+            MessageSource::Arc(msg) => msg.thinking_content.as_deref(),
+            MessageSource::Snapshot {
+                thinking_content, ..
+            } => {
+                if thinking_content.is_empty() {
+                    None
+                } else {
+                    Some(thinking_content.as_str())
+                }
+            }
+        }
+    }
+
+    fn thinking_duration_ms(&self) -> Option<u64> {
+        match &self.source {
+            MessageSource::Arc(msg) => msg.thinking_duration_ms,
+            MessageSource::Snapshot {
+                thinking_duration_ms,
+                ..
+            } => *thinking_duration_ms,
+        }
+    }
+
+    fn is_thinking_done(&self) -> bool {
+        match &self.source {
+            MessageSource::Arc(_) => true, // Historical messages are always done
+            MessageSource::Snapshot { thinking_done, .. } => *thinking_done,
+        }
+    }
+
+    fn toggle_thinking_collapsed(&mut self, cx: &mut Context<Self>) {
+        self.thinking_collapsed = !self.thinking_collapsed;
+        cx.notify();
     }
 }
 
@@ -749,6 +850,13 @@ impl Render for MessageItem {
         let is_streaming = matches!(status, MessageStatus::Streaming);
         let message_id = self.id;
 
+        // Get thinking info
+        let thinking_content_opt = self.thinking_content().map(|s| s.to_string());
+        let thinking_duration_ms = self.thinking_duration_ms();
+        let is_thinking_done = self.is_thinking_done();
+        let thinking_collapsed = self.thinking_collapsed;
+        let has_thinking = thinking_content_opt.is_some();
+
         if is_user {
             // User messages: bubble style, right-aligned
             let bubble = v_flex()
@@ -778,6 +886,94 @@ impl Render for MessageItem {
                         .text_xs()
                         .text_color(theme.muted_foreground),
                 )
+                // Thinking section (collapsible)
+                .when(has_thinking, |this| {
+                    let thinking_header_text = if is_thinking_done {
+                        if let Some(duration) = thinking_duration_ms {
+                            let seconds = duration as f64 / 1000.0;
+                            format!("{} {:.1}s", t!("thinking.duration"), seconds)
+                        } else {
+                            t!("thinking.duration").to_string()
+                        }
+                    } else {
+                        t!("thinking.in_progress").to_string()
+                    };
+
+                    let arrow = if thinking_collapsed { "▶" } else { "▼" };
+                    let header_text = format!("{} {} {}", arrow, "🧠", thinking_header_text);
+
+                    this.child(
+                        v_flex()
+                            .w_full()
+                            .gap_1()
+                            .child(
+                                // Collapsible header
+                                div()
+                                    .id("thinking-header")
+                                    .cursor_pointer()
+                                    .px_2()
+                                    .py_1()
+                                    .rounded_md()
+                                    .bg(theme.muted.opacity(0.5))
+                                    .hover(|this| this.bg(theme.muted))
+                                    .on_click(cx.listener(|this, _, _window, cx| {
+                                        this.toggle_thinking_collapsed(cx);
+                                    }))
+                                    .child(
+                                        h_flex()
+                                            .gap_2()
+                                            .items_center()
+                                            .child(
+                                                Label::new(header_text)
+                                                    .text_xs()
+                                                    .text_color(theme.muted_foreground),
+                                            )
+                                            .when(!is_thinking_done, |this| {
+                                                // Pulsing animation when thinking
+                                                this.child(
+                                                    div()
+                                                        .size_2()
+                                                        .rounded_full()
+                                                        .bg(theme.accent)
+                                                        .with_animation(
+                                                            "thinking-pulse",
+                                                            Animation::new(Duration::from_millis(
+                                                                800,
+                                                            ))
+                                                            .repeat()
+                                                            .with_easing(pulsating_between(
+                                                                0.3, 1.0,
+                                                            )),
+                                                            |this, delta| this.opacity(delta),
+                                                        ),
+                                                )
+                                            }),
+                                    ),
+                            )
+                            // Thinking content (shown when expanded)
+                            .when(!thinking_collapsed, |this| {
+                                if let Some(thinking_text) = &thinking_content_opt {
+                                    this.child(
+                                        div()
+                                            .w_full()
+                                            .px_2()
+                                            .py_2()
+                                            .rounded_md()
+                                            .bg(theme.muted.opacity(0.3))
+                                            .border_l_2()
+                                            .border_color(theme.muted_foreground.opacity(0.3))
+                                            .child(
+                                                Label::new(thinking_text.clone())
+                                                    .text_xs()
+                                                    .text_color(theme.muted_foreground),
+                                            ),
+                                    )
+                                } else {
+                                    this
+                                }
+                            }),
+                    )
+                })
                 .child(
                     v_flex()
                         .w_full()

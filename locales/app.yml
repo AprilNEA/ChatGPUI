@@ -320,3 +320,12 @@ menu.help:
 menu.documentation:
   en: "Documentation"
   zh-CN: "文档"
+
+# Thinking (Extended Thinking)
+thinking.in_progress:
+  en: "Thinking..."
+  zh-CN: "思考中..."
+
+thinking.duration:
+  en: "Thought for"
+  zh-CN: "思考"

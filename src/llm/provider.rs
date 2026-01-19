@@ -12,6 +12,10 @@ use super::model::Model;
 /// Result type for streaming events
 #[derive(Debug, Clone)]
 pub enum StreamEvent {
+    /// Incremental thinking delta (extended thinking)
+    ThinkingDelta(String),
+    /// Thinking completed
+    ThinkingDone,
     /// Incremental text delta
     Delta(String),
     /// Stream completed successfully

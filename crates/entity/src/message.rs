@@ -40,6 +40,9 @@ pub struct Model {
     pub status: MessageStatus,
     pub error_message: Option<String>,
     pub created_at: DateTimeUtc,
+    /// Extended thinking content (for Claude models)
+    #[sea_orm(column_type = "Text", nullable)]
+    pub thinking_content: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

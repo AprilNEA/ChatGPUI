@@ -122,6 +122,30 @@ impl DatabaseService {
         MessageRepository::create(&conn, id, conversation_id, role, content, status).await
     }
 
+    /// Create a new message with thinking content
+    #[allow(clippy::too_many_arguments)]
+    pub async fn create_message_with_thinking(
+        &self,
+        id: Uuid,
+        conversation_id: Uuid,
+        role: message::MessageRole,
+        content: String,
+        status: message::MessageStatus,
+        thinking_content: Option<String>,
+    ) -> Result<message::Model> {
+        let conn = self.get_connection().await?;
+        MessageRepository::create_with_thinking(
+            &conn,
+            id,
+            conversation_id,
+            role,
+            content,
+            status,
+            thinking_content,
+        )
+        .await
+    }
+
     /// List messages for a conversation
     pub async fn list_messages(&self, conversation_id: Uuid) -> Result<Vec<message::Model>> {
         let conn = self.get_connection().await?;

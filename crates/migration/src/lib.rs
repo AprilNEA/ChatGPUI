@@ -6,6 +6,7 @@ pub use sea_orm_migration::prelude::*;
 
 mod m20260118_01_create_tables;
 mod m20260119_01_create_attachments;
+mod m20260121_add_thinking;
 
 pub struct Migrator;
 
@@ -15,6 +16,7 @@ impl MigratorTrait for Migrator {
         vec![
             Box::new(m20260118_01_create_tables::Migration),
             Box::new(m20260119_01_create_attachments::Migration),
+            Box::new(m20260121_add_thinking::Migration),
         ]
     }
 }
