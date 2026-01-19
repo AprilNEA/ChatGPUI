@@ -897,8 +897,16 @@ impl Render for SettingsView {
         let theme = cx.theme();
 
         h_flex()
+            .id("settings-root")
+            .track_focus(&cx.focus_handle())
             .size_full()
             .bg(theme.background)
+            .on_key_down(cx.listener(|_this, event: &gpui::KeyDownEvent, window, _cx| {
+                // Handle Cmd+W to close the settings window
+                if event.keystroke.key == "w" && event.keystroke.modifiers.platform {
+                    window.remove_window();
+                }
+            }))
             .child(self.render_sidebar(cx))
             .child(
                 v_flex()
@@ -917,7 +925,7 @@ pub fn open_settings_window(cx: &mut App) {
     let options = WindowOptions {
         window_bounds: Some(WindowBounds::Windowed(Bounds::centered(
             None,
-            size(px(680.), px(480.)),
+            size(px(800.), px(560.)),
             cx,
         ))),
         titlebar: Some(TitlebarOptions {
