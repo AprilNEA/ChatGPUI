@@ -1,0 +1,287 @@
+# SPDX-FileCopyrightText: 2026 AprilNEA <dev@aprilnea.me>
+# SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
+
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (e.g., v0.1.0)"
+        required: false
+        type: string
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  MACOSX_DEPLOYMENT_TARGET: "12.0"
+
+jobs:
+  build-macos:
+    name: Build macOS (${{ matrix.target }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            runner: macos-14
+            arch: arm64
+          - target: x86_64-apple-darwin
+            runner: macos-13
+            arch: x64
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Rust
+        run: |
+          rustup toolchain install nightly-2026-01-18 --profile minimal
+          rustup default nightly-2026-01-18
+          rustup target add ${{ matrix.target }}
+
+      - name: Setup Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: "v1-rust"
+          shared-key: ${{ matrix.target }}
+
+      - name: Install cargo-bundle
+        run: cargo install cargo-bundle
+
+      - name: Build release binary
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Bundle macOS app
+        run: cargo bundle --release --target ${{ matrix.target }}
+
+      - name: Upload app bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: ChatGPUI-app-${{ matrix.arch }}
+          path: target/${{ matrix.target }}/release/bundle/osx/ChatGPUI.app
+          if-no-files-found: error
+
+  create-universal-binary:
+    name: Create Universal Binary
+    needs: build-macos
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Rust
+        run: |
+          rustup toolchain install nightly-2026-01-18 --profile minimal
+          rustup default nightly-2026-01-18
+          rustup target add aarch64-apple-darwin x86_64-apple-darwin
+
+      - name: Setup Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: "v1-rust"
+          shared-key: "universal"
+
+      - name: Install cargo-bundle
+        run: cargo install cargo-bundle
+
+      - name: Build both architectures
+        run: |
+          cargo build --release --target aarch64-apple-darwin
+          cargo build --release --target x86_64-apple-darwin
+
+      - name: Create universal binary
+        run: |
+          mkdir -p target/universal-apple-darwin/release
+          lipo -create \
+            target/aarch64-apple-darwin/release/chatgpui \
+            target/x86_64-apple-darwin/release/chatgpui \
+            -output target/universal-apple-darwin/release/chatgpui
+
+      - name: Bundle universal app
+        run: |
+          APP_NAME="ChatGPUI"
+
+          # Bundle from arm64 target first
+          cargo bundle --release --target aarch64-apple-darwin
+
+          # Copy bundled app
+          cp -r "target/aarch64-apple-darwin/release/bundle/osx/${APP_NAME}.app" \
+            "target/universal-apple-darwin/release/"
+
+          # Replace binary with universal binary
+          cp target/universal-apple-darwin/release/chatgpui \
+            "target/universal-apple-darwin/release/${APP_NAME}.app/Contents/MacOS/chatgpui"
+
+      - name: Upload universal app bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: ChatGPUI-app-universal
+          path: target/universal-apple-darwin/release/ChatGPUI.app
+          if-no-files-found: error
+
+  sign-and-notarize:
+    name: Sign and Notarize (${{ matrix.arch }})
+    needs: [build-macos, create-universal-binary]
+    runs-on: macos-14
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [arm64, x64, universal]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: bundle/ChatGPUI.entitlements
+          sparse-checkout-cone-mode: false
+
+      - name: Download app bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: ChatGPUI-app-${{ matrix.arch }}
+          path: ChatGPUI.app
+
+      - name: Import certificates
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          # Create temporary keychain
+          echo "$APPLE_CERTIFICATE" | base64 --decode > certificate.p12
+          security create-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+          security import certificate.p12 -k build.keychain -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" build.keychain
+
+          # Verify certificate is available
+          security find-identity -v -p codesigning build.keychain
+
+      - name: Sign app
+        env:
+          APPLE_IDENTITY: ${{ secrets.APPLE_IDENTITY }}
+        run: |
+          ENTITLEMENTS="bundle/ChatGPUI.entitlements"
+
+          # Sign all nested components first (frameworks, libraries, etc.)
+          find ChatGPUI.app/Contents -type f \( -name "*.dylib" -o -name "*.so" -o -perm +111 \) -exec \
+            codesign --force --options runtime --sign "$APPLE_IDENTITY" --timestamp {} \;
+
+          # Sign the main app bundle with entitlements
+          codesign --force --options runtime \
+            --sign "$APPLE_IDENTITY" \
+            --timestamp \
+            --entitlements "$ENTITLEMENTS" \
+            ChatGPUI.app
+
+          # Verify signature
+          codesign --verify --deep --strict --verbose=2 ChatGPUI.app
+
+          # Display entitlements for verification
+          codesign -d --entitlements :- ChatGPUI.app
+
+      - name: Create DMG
+        run: |
+          APP_NAME="ChatGPUI"
+          DMG_NAME="ChatGPUI-${{ matrix.arch }}.dmg"
+
+          mkdir -p dmg-contents
+          cp -r ChatGPUI.app dmg-contents/
+          ln -s /Applications dmg-contents/Applications
+
+          hdiutil create -volname "${APP_NAME}" \
+            -srcfolder dmg-contents \
+            -ov -format UDZO \
+            "${DMG_NAME}"
+
+          rm -rf dmg-contents
+
+      - name: Notarize DMG
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+        run: |
+          DMG_NAME="ChatGPUI-${{ matrix.arch }}.dmg"
+
+          # Submit for notarization
+          xcrun notarytool submit "${DMG_NAME}" \
+            --apple-id "$APPLE_ID" \
+            --team-id "$APPLE_TEAM_ID" \
+            --password "$APPLE_APP_SPECIFIC_PASSWORD" \
+            --wait
+
+          # Staple the notarization ticket
+          xcrun stapler staple "${DMG_NAME}"
+
+      - name: Upload signed DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: ChatGPUI-macos-${{ matrix.arch }}-signed
+          path: ChatGPUI-${{ matrix.arch }}.dmg
+          if-no-files-found: error
+
+      - name: Cleanup keychain
+        if: always()
+        run: |
+          security delete-keychain build.keychain || true
+
+  release:
+    name: Create Release
+    needs: sign-and-notarize
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download all signed artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: ChatGPUI-macos-*-signed
+          path: artifacts
+
+      - name: Prepare release assets
+        run: |
+          mkdir -p release-assets
+          find artifacts -name "*.dmg" -exec cp {} release-assets/ \;
+          ls -la release-assets/
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          # Get the previous tag
+          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          CURRENT_TAG=${GITHUB_REF#refs/tags/}
+
+          echo "## What's Changed" > CHANGELOG.md
+          echo "" >> CHANGELOG.md
+
+          if [ -n "$PREV_TAG" ]; then
+            git log ${PREV_TAG}..HEAD --pretty=format:"- %s (%h)" >> CHANGELOG.md
+          else
+            git log --pretty=format:"- %s (%h)" -20 >> CHANGELOG.md
+          fi
+
+          echo "" >> CHANGELOG.md
+          echo "" >> CHANGELOG.md
+          echo "**Full Changelog**: https://github.com/${{ github.repository }}/compare/${PREV_TAG}...${CURRENT_TAG}" >> CHANGELOG.md
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release-assets/*
+          body_path: CHANGELOG.md
+          draft: false
+          prerelease: ${{ contains(github.ref, '-alpha') || contains(github.ref, '-beta') || contains(github.ref, '-rc') }}
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

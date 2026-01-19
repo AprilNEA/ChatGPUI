@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Hardened Runtime -->
+    <key>com.apple.security.app-sandbox</key>
+    <false/>
+    <key>com.apple.security.hardened-runtime</key>
+    <true/>
+
+    <!-- Network access for LLM API calls -->
+    <key>com.apple.security.network.client</key>
+    <true/>
+
+    <!-- iCloud -->
+    <key>com.apple.developer.icloud-container-identifiers</key>
+    <array>
+        <string>iCloud.com.aprilnea.chatgpui</string>
+    </array>
+    <key>com.apple.developer.icloud-services</key>
+    <array>
+        <string>CloudDocuments</string>
+        <string>CloudKit</string>
+    </array>
+    <key>com.apple.developer.ubiquity-container-identifiers</key>
+    <array>
+        <string>iCloud.com.aprilnea.chatgpui</string>
+    </array>
+
+    <!-- Push Notifications -->
+    <key>com.apple.developer.aps-environment</key>
+    <string>production</string>
+
+    <!-- Sign in with Apple -->
+    <key>com.apple.developer.applesignin</key>
+    <array>
+        <string>Default</string>
+    </array>
+
+    <!-- App Groups (for sharing data with iOS app) -->
+    <key>com.apple.security.application-groups</key>
+    <array>
+        <string>group.com.aprilnea.chatgpui</string>
+    </array>
+</dict>
+</plist>
