@@ -23,8 +23,10 @@ mod model_selector;
 mod settings;
 mod storage;
 
+use std::path::PathBuf;
+
 use gpui::*;
-use gpui_component::Root;
+use gpui_component::{Root, Theme, ThemeRegistry};
 
 use crate::assets::Assets;
 
@@ -104,6 +106,20 @@ fn main() {
         gpui_tokio_bridge::init(cx);
         settings::init(cx);
         database::init(cx);
+
+        // Load themes from themes directory
+        let theme_name = SharedString::from("macOS Classic Dark");
+        if let Err(err) = ThemeRegistry::watch_dir(PathBuf::from("./themes"), cx, move |cx| {
+            if let Some(theme) = ThemeRegistry::global(cx)
+                .themes()
+                .get(&theme_name)
+                .cloned()
+            {
+                Theme::global_mut(cx).apply_config(&theme);
+            }
+        }) {
+            tracing::error!("Failed to watch themes directory: {}", err);
+        }
 
         // Register global actions
         cx.on_action(|_: &Quit, cx| {

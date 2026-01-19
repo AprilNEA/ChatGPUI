@@ -5,10 +5,11 @@
 use gpui::prelude::FluentBuilder;
 use gpui::*;
 use gpui_component::{
-    ActiveTheme, Disableable, IconName, IconNamed, Sizable,
+    ActiveTheme, Disableable, IconName, IconNamed, Selectable, Sizable,
     button::{Button, ButtonVariants},
     h_flex,
     input::{Input, InputEvent, InputState},
+    menu::{DropdownMenu, PopupMenu, PopupMenuItem},
     v_flex,
 };
 
@@ -16,16 +17,56 @@ use crate::message::Attachment;
 
 const MAX_IMAGE_SIZE: usize = 20 * 1024 * 1024; // 20MB
 
+/// 推理级别
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ReasoningLevel {
+    #[default]
+    Off,
+    Low,
+    Medium,
+    High,
+}
+
+impl ReasoningLevel {
+    pub fn label(&self) -> &'static str {
+        match self {
+            ReasoningLevel::Off => "关闭",
+            ReasoningLevel::Low => "低",
+            ReasoningLevel::Medium => "中",
+            ReasoningLevel::High => "高",
+        }
+    }
+
+    pub fn icon(&self) -> IconName {
+        match self {
+            ReasoningLevel::Off => IconName::CircleX,
+            ReasoningLevel::Low => IconName::Loader,
+            ReasoningLevel::Medium => IconName::Loader,
+            ReasoningLevel::High => IconName::Loader,
+        }
+    }
+}
+
 pub struct MessageInput {
     input_state: Entity<InputState>,
     is_loading: bool,
     pending_newline: bool,
     attachments: Vec<Attachment>,
+    // 工具栏状态
+    web_search_enabled: bool,
+    artifacts_enabled: bool,
+    reasoning_level: ReasoningLevel,
+    image_gen_enabled: bool,
+    mcp_enabled: bool,
 }
 
 pub struct SubmitEvent {
     pub content: String,
     pub attachments: Vec<Attachment>,
+    pub web_search: bool,
+    pub artifacts: bool,
+    pub reasoning_level: ReasoningLevel,
+    pub image_gen: bool,
 }
 
 impl EventEmitter<SubmitEvent> for MessageInput {}
@@ -36,7 +77,7 @@ impl MessageInput {
             InputState::new(window, cx)
                 .placeholder("Type your message...")
                 .clean_on_escape()
-                .auto_grow(1, 10) // Support multiline display
+                .auto_grow(1, 10)
         });
 
         cx.subscribe_in(
@@ -45,14 +86,11 @@ impl MessageInput {
             |this, _, event: &InputEvent, window, cx| {
                 if let InputEvent::PressEnter { secondary } = event {
                     if *secondary {
-                        // Cmd+Enter: insert newline (component already inserted it)
-                        // Do nothing, keep the newline
+                        // Cmd+Enter: insert newline
                     } else if this.pending_newline {
-                        // Shift+Enter was pressed, keep the newline
                         this.pending_newline = false;
                     } else {
-                        // Plain Enter: submit message
-                        // Remove the trailing newline that was just inserted by the component
+                        // Plain Enter: submit
                         this.input_state.update(cx, |state, cx| {
                             let value = state.value().to_string();
                             if value.ends_with('\n') {
@@ -72,12 +110,16 @@ impl MessageInput {
             is_loading: false,
             pending_newline: false,
             attachments: Vec::new(),
+            web_search_enabled: false,
+            artifacts_enabled: false,
+            reasoning_level: ReasoningLevel::Off,
+            image_gen_enabled: false,
+            mcp_enabled: false,
         }
     }
 
     fn handle_shift_enter(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.pending_newline = true;
-        // Manually insert newline
         self.input_state.update(cx, |state, cx| {
             state.insert("\n", window, cx);
         });
@@ -110,6 +152,10 @@ impl MessageInput {
         cx.emit(SubmitEvent {
             content: value,
             attachments,
+            web_search: self.web_search_enabled,
+            artifacts: self.artifacts_enabled,
+            reasoning_level: self.reasoning_level,
+            image_gen: self.image_gen_enabled,
         });
         self.clear(window, cx);
     }
@@ -149,6 +195,31 @@ impl MessageInput {
         self.attachments.retain(|a| a.id != id);
         cx.notify();
     }
+
+    fn toggle_web_search(&mut self, cx: &mut Context<Self>) {
+        self.web_search_enabled = !self.web_search_enabled;
+        cx.notify();
+    }
+
+    fn toggle_artifacts(&mut self, cx: &mut Context<Self>) {
+        self.artifacts_enabled = !self.artifacts_enabled;
+        cx.notify();
+    }
+
+    fn set_reasoning_level(&mut self, level: ReasoningLevel, cx: &mut Context<Self>) {
+        self.reasoning_level = level;
+        cx.notify();
+    }
+
+    fn toggle_image_gen(&mut self, cx: &mut Context<Self>) {
+        self.image_gen_enabled = !self.image_gen_enabled;
+        cx.notify();
+    }
+
+    fn toggle_mcp(&mut self, cx: &mut Context<Self>) {
+        self.mcp_enabled = !self.mcp_enabled;
+        cx.notify();
+    }
 }
 
 fn mime_from_extension(filename: &str) -> String {
@@ -180,48 +251,182 @@ impl Render for MessageInput {
             .border_color(theme.border)
             .bg(theme.background)
             .p_4()
+            // 附件预览
             .when(has_attachments, |this: Div| {
                 this.child(self.render_attachment_preview(cx))
             })
+            // 输入框
             .child(
-                h_flex()
-                    .gap_3()
+                div()
+                    .w_full()
                     .on_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
                         if event.keystroke.key == "enter" && event.keystroke.modifiers.shift {
                             this.handle_shift_enter(window, cx);
                         }
                     }))
+                    .child(Input::new(&self.input_state).w_full().disabled(is_loading)),
+            )
+            // 底部工具栏
+            .child(self.render_toolbar(cx))
+    }
+}
+
+impl MessageInput {
+    fn render_toolbar(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = cx.theme();
+        let is_loading = self.is_loading;
+
+        h_flex()
+            .justify_between()
+            .items_center()
+            .child(
+                h_flex()
+                    .gap_1()
+                    // 附件按钮
                     .child(
                         Button::new("attachment")
                             .icon(IconName::Plus)
-                            .large()
                             .ghost()
+                            .xsmall()
                             .disabled(is_loading)
                             .on_click(cx.listener(|this, _, _window, cx| {
                                 this.handle_attachment_click(cx);
                             })),
                     )
-                    .child(
-                        v_flex()
-                            .flex_1()
-                            .child(Input::new(&self.input_state).large().disabled(is_loading)),
-                    )
-                    .child(
-                        Button::new("send")
-                            .icon(IconName::ArrowRight)
-                            .large()
-                            .primary()
-                            .loading(is_loading)
-                            .disabled(is_loading)
-                            .on_click(cx.listener(|this, _, window, cx| {
-                                this.handle_submit(window, cx);
-                            })),
-                    ),
+                    // 搜索开关
+                    .child(self.render_toggle_button(
+                        "web-search",
+                        IconName::Globe,
+                        self.web_search_enabled,
+                        is_loading,
+                        cx.listener(|this, _, _window, cx| {
+                            this.toggle_web_search(cx);
+                        }),
+                    ))
+                    // Artifacts 开关
+                    .child(self.render_toggle_button(
+                        "artifacts",
+                        IconName::Frame,
+                        self.artifacts_enabled,
+                        is_loading,
+                        cx.listener(|this, _, _window, cx| {
+                            this.toggle_artifacts(cx);
+                        }),
+                    ))
+                    // 推理级别下拉菜单
+                    .child(self.render_reasoning_dropdown(cx))
+                    // 图像生成开关
+                    .child(self.render_toggle_button(
+                        "image-gen",
+                        IconName::Palette,
+                        self.image_gen_enabled,
+                        is_loading,
+                        cx.listener(|this, _, _window, cx| {
+                            this.toggle_image_gen(cx);
+                        }),
+                    ))
+                    // MCP 工具开关（占位符）
+                    .child(self.render_toggle_button(
+                        "mcp",
+                        IconName::SquareTerminal,
+                        self.mcp_enabled,
+                        is_loading,
+                        cx.listener(|this, _, _window, cx| {
+                            this.toggle_mcp(cx);
+                        }),
+                    )),
+            )
+            // 发送按钮
+            .child(
+                Button::new("send")
+                    .icon(IconName::ArrowRight)
+                    .small()
+                    .primary()
+                    .loading(is_loading)
+                    .disabled(is_loading)
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        this.handle_submit(window, cx);
+                    })),
             )
     }
-}
 
-impl MessageInput {
+    fn render_toggle_button(
+        &self,
+        id: &'static str,
+        icon: IconName,
+        enabled: bool,
+        is_loading: bool,
+        handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+    ) -> impl IntoElement {
+        Button::new(id)
+            .icon(icon)
+            .ghost()
+            .xsmall()
+            .selected(enabled)
+            .disabled(is_loading)
+            .on_click(handler)
+    }
+
+    fn render_reasoning_dropdown(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
+        let current_level = self.reasoning_level;
+        let is_enabled = current_level != ReasoningLevel::Off;
+        let entity = cx.entity().clone();
+
+        Button::new("reasoning")
+            .icon(IconName::Bot)
+            .ghost()
+            .xsmall()
+            .selected(is_enabled)
+            .child(current_level.label())
+            .dropdown_menu(move |menu, _window, _cx| {
+                let entity_off = entity.clone();
+                let entity_low = entity.clone();
+                let entity_med = entity.clone();
+                let entity_high = entity.clone();
+
+                menu.item(
+                    PopupMenuItem::new("关闭")
+                        .icon(IconName::CircleX)
+                        .checked(current_level == ReasoningLevel::Off)
+                        .on_click(move |_, _window, cx| {
+                            entity_off.update(cx, |this, cx| {
+                                this.set_reasoning_level(ReasoningLevel::Off, cx);
+                            });
+                        }),
+                )
+                .item(
+                    PopupMenuItem::new("低")
+                        .icon(IconName::Loader)
+                        .checked(current_level == ReasoningLevel::Low)
+                        .on_click(move |_, _window, cx| {
+                            entity_low.update(cx, |this, cx| {
+                                this.set_reasoning_level(ReasoningLevel::Low, cx);
+                            });
+                        }),
+                )
+                .item(
+                    PopupMenuItem::new("中")
+                        .icon(IconName::Loader)
+                        .checked(current_level == ReasoningLevel::Medium)
+                        .on_click(move |_, _window, cx| {
+                            entity_med.update(cx, |this, cx| {
+                                this.set_reasoning_level(ReasoningLevel::Medium, cx);
+                            });
+                        }),
+                )
+                .item(
+                    PopupMenuItem::new("高")
+                        .icon(IconName::Loader)
+                        .checked(current_level == ReasoningLevel::High)
+                        .on_click(move |_, _window, cx| {
+                            entity_high.update(cx, |this, cx| {
+                                this.set_reasoning_level(ReasoningLevel::High, cx);
+                            });
+                        }),
+                )
+            })
+    }
+
     fn render_attachment_preview(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
 
