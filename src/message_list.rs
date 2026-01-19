@@ -13,12 +13,12 @@ use gpui_markdown::Markdown;
 use crate::message::{Message, MessageStatus, Role};
 
 pub struct MessageList {
-    /// 历史消息（使用 Arc 避免克隆）
+    /// Historical messages (Arc to avoid cloning).
     messages: Vec<Arc<Message>>,
-    /// 当前流式消息（可变，独立更新）
+    /// Current streaming message (mutable, updated independently).
     streaming_message: Option<Message>,
     scroll_handle: ScrollHandle,
-    /// 是否需要在下次渲染时滚动到底部
+    /// Whether to scroll to bottom on next render.
     pending_scroll_to_bottom: bool,
 }
 
@@ -32,22 +32,22 @@ impl MessageList {
         }
     }
 
-    /// 设置历史消息（非流式消息）
+    /// Set historical messages (non-streaming).
     pub fn set_messages(&mut self, messages: Vec<Message>, cx: &mut Context<Self>) {
-        // 分离流式消息和历史消息
+        // Split streaming and history messages.
         let (streaming, history): (Vec<_>, Vec<_>) = messages
             .into_iter()
             .partition(|m| matches!(m.status, MessageStatus::Streaming));
 
         let new_message_added = history.len() > self.messages.len();
 
-        // 历史消息使用 Arc 包装
+        // Wrap history messages in Arc.
         self.messages = history.into_iter().map(Arc::new).collect();
 
-        // 流式消息单独存储
+        // Store streaming message separately.
         self.streaming_message = streaming.into_iter().next();
 
-        // 如果有新消息，标记需要滚动到底部
+        // If a new message arrives, mark scroll to bottom.
         if new_message_added || self.streaming_message.is_some() {
             self.pending_scroll_to_bottom = true;
         }
@@ -55,7 +55,7 @@ impl MessageList {
         cx.notify();
     }
 
-    /// 仅更新流式消息内容（避免克隆所有消息）
+    /// Update streaming content only (avoid cloning all messages).
     pub fn update_streaming_content(&mut self, content: &str, cx: &mut Context<Self>) {
         if let Some(ref mut msg) = self.streaming_message {
             msg.content.push_str(content);
@@ -64,7 +64,7 @@ impl MessageList {
         }
     }
 
-    /// 完成流式消息，将其移入历史消息
+    /// Finish streaming message and move it into history.
     pub fn finish_streaming(&mut self, cx: &mut Context<Self>) {
         if let Some(mut msg) = self.streaming_message.take() {
             msg.status = MessageStatus::Done;
@@ -73,7 +73,7 @@ impl MessageList {
         }
     }
 
-    /// 设置流式消息错误
+    /// Set error state for streaming message.
     pub fn set_streaming_error(&mut self, error: &str, cx: &mut Context<Self>) {
         if let Some(mut msg) = self.streaming_message.take() {
             msg.status = MessageStatus::Error(error.to_string());
@@ -82,7 +82,7 @@ impl MessageList {
         }
     }
 
-    /// 开始新的流式消息
+    /// Start a new streaming message.
     pub fn start_streaming(&mut self, cx: &mut Context<Self>) {
         self.streaming_message = Some(Message::assistant_streaming());
         self.pending_scroll_to_bottom = true;
@@ -92,19 +92,19 @@ impl MessageList {
 
 impl Render for MessageList {
     fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-        // 在渲染时执行滚动
+        // Perform scroll during render.
         if self.pending_scroll_to_bottom {
             self.scroll_handle.scroll_to_bottom();
             self.pending_scroll_to_bottom = false;
         }
 
-        // 历史消息（使用 Arc，不需要克隆整个 Message）
+        // History messages (Arc, no full Message clone).
         let history_items = self
             .messages
             .iter()
             .map(|msg| MessageItem::from_arc(msg.clone()));
 
-        // 流式消息（如果有的话）
+        // Streaming message (if any).
         let streaming_item = self
             .streaming_message
             .as_ref()
@@ -129,11 +129,11 @@ impl Render for MessageList {
     }
 }
 
-/// 消息数据的来源
+/// Source of message data.
 enum MessageSource {
-    /// 使用 Arc 包装的历史消息（无需克隆）
+    /// Historical message wrapped in Arc (no clone).
     Arc(Arc<Message>),
-    /// 流式消息的快照（仅克隆内容字符串）
+    /// Snapshot of streaming message (clone content only).
     Snapshot {
         role: Role,
         content: SharedString,
@@ -147,14 +147,14 @@ pub struct MessageItem {
 }
 
 impl MessageItem {
-    /// 从 Arc 创建（历史消息，无需克隆整个 Message）
+    /// Build from Arc (history message, no full clone).
     pub fn from_arc(message: Arc<Message>) -> Self {
         Self {
             source: MessageSource::Arc(message),
         }
     }
 
-    /// 从流式消息引用创建快照（仅克隆内容字符串）
+    /// Build snapshot from streaming message (clone content only).
     pub fn from_streaming(message: &Message) -> Self {
         Self {
             source: MessageSource::Snapshot {

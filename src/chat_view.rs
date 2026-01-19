@@ -19,7 +19,7 @@ use crate::{
     settings::get_settings,
 };
 
-/// 流式更新的防抖间隔（毫秒）
+/// Debounce interval for streaming updates (ms).
 const STREAM_DEBOUNCE_MS: u64 = 50;
 
 /// Event emitted when a conversation is created or updated
@@ -37,10 +37,10 @@ pub struct ChatView {
     is_generating: bool,
     current_conversation_id: Option<Uuid>,
     _subscription: Subscription,
-    /// 防抖任务：避免流式更新时频繁重渲染
+    /// Debounce task to avoid frequent rerenders during streaming.
     debounce_task: Option<Task<()>>,
-    /// 是否有待处理的 UI 更新
-    pending_ui_update: bool,
+    /// Buffered streaming content accumulated during the debounce window.
+    pending_stream_chunk: String,
 }
 
 impl EventEmitter<ConversationUpdatedEvent> for ChatView {}
@@ -83,7 +83,7 @@ impl ChatView {
             current_conversation_id: None,
             _subscription,
             debounce_task: None,
-            pending_ui_update: false,
+            pending_stream_chunk: String::new(),
         }
     }
 
@@ -287,7 +287,7 @@ impl ChatView {
             input.set_loading(true, cx);
         });
 
-        // 开始流式消息（在 MessageList 中单独处理）
+        // Start streaming message (handled separately in MessageList).
         self.message_list.update(cx, |list, cx| {
             list.start_streaming(cx);
         });
@@ -313,7 +313,7 @@ impl ChatView {
 
         // Process stream events on GPUI
         cx.spawn(async move |this, cx| {
-            // 累积内容，用于最终保存到数据库
+            // Accumulate content for final persistence.
             let mut accumulated_content = String::new();
 
             while let Ok(event) = rx.recv().await {
@@ -322,11 +322,8 @@ impl ChatView {
                         accumulated_content.push_str(&content);
                         let _ = cx.update(|app| {
                             let _ = this.update(app, |this, cx| {
-                                // 直接更新 MessageList 的流式消息，无需克隆历史消息
-                                this.message_list.update(cx, |list, cx| {
-                                    list.update_streaming_content(&content, cx);
-                                });
-                                // 使用防抖机制（这里主要是为了滚动）
+                                this.pending_stream_chunk.push_str(&content);
+                                // Debounce: batch updates into MessageList.
                                 this.schedule_debounced_update(cx);
                             });
                         });
@@ -335,11 +332,12 @@ impl ChatView {
                         let content = accumulated_content.clone();
                         let _ = cx.update(|app| {
                             let _ = this.update(app, |this, cx| {
-                                // 完成流式消息
+                                this.flush_pending_stream_chunk(cx);
+                                // Finish streaming message.
                                 this.message_list.update(cx, |list, cx| {
                                     list.finish_streaming(cx);
                                 });
-                                // 保存到本地消息列表（用于发送 API 请求）
+                                // Persist to local list (used for future API requests).
                                 this.messages.push(Message::new(Role::Assistant, &content));
                                 this.finish_generating_with_content(content, cx);
                             });
@@ -349,6 +347,7 @@ impl ChatView {
                     StreamEvent::Error(err) => {
                         let _ = cx.update(|app| {
                             let _ = this.update(app, |this, cx| {
+                                this.flush_pending_stream_chunk(cx);
                                 this.message_list.update(cx, |list, cx| {
                                     list.set_streaming_error(&err, cx);
                                 });
@@ -368,9 +367,9 @@ impl ChatView {
         self.message_input.update(cx, |input, cx| {
             input.set_loading(false, cx);
         });
-        // 取消防抖任务
+        // Clear debounce task.
         self.debounce_task = None;
-        self.pending_ui_update = false;
+        self.pending_stream_chunk.clear();
         cx.notify();
     }
 
@@ -380,9 +379,9 @@ impl ChatView {
             input.set_loading(false, cx);
         });
 
-        // 取消防抖任务
+        // Clear debounce task.
         self.debounce_task = None;
-        self.pending_ui_update = false;
+        self.pending_stream_chunk.clear();
 
         // Save assistant message to database
         self.save_message_to_db(Uuid::new_v4(), Role::Assistant, content, cx);
@@ -435,32 +434,37 @@ impl ChatView {
         cx.notify();
     }
 
-    /// 防抖通知 - 流式消息时使用，避免每个 token 都触发重渲染
+    /// Debounced flush for streaming updates to avoid rerendering per token.
     fn schedule_debounced_update(&mut self, cx: &mut Context<Self>) {
-        self.pending_ui_update = true;
-
-        // 如果已经有防抖任务在运行，不需要再创建新的
+        // If a debounce task is already running, do not create another.
         if self.debounce_task.is_some() {
             return;
         }
 
         self.debounce_task = Some(cx.spawn(async move |this, cx| {
-            // 等待防抖间隔
+            // Wait for debounce interval.
             cx.background_executor()
                 .timer(Duration::from_millis(STREAM_DEBOUNCE_MS))
                 .await;
 
             let _ = cx.update(|app| {
                 let _ = this.update(app, |this, cx| {
-                    if this.pending_ui_update {
-                        this.pending_ui_update = false;
-                        // 只通知刷新，不需要重新设置消息列表
-                        cx.notify();
-                    }
+                    this.flush_pending_stream_chunk(cx);
                     this.debounce_task = None;
                 });
             });
         }));
+    }
+
+    fn flush_pending_stream_chunk(&mut self, cx: &mut Context<Self>) {
+        if self.pending_stream_chunk.is_empty() {
+            return;
+        }
+
+        let chunk = std::mem::take(&mut self.pending_stream_chunk);
+        self.message_list.update(cx, move |list, cx| {
+            list.update_streaming_content(&chunk, cx);
+        });
     }
 }
 
