@@ -11,9 +11,9 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
-use entity::{conversation, message};
+use entity::{attachment, conversation, message};
 use super::manager::DatabaseManager;
-use super::repository::{ConversationRepository, MessageRepository};
+use super::repository::{AttachmentRepository, ConversationRepository, MessageRepository};
 
 /// Global database service accessible from GPUI context
 #[derive(Clone)]
@@ -147,6 +147,39 @@ impl DatabaseService {
     ) -> Result<message::Model> {
         let conn = self.get_connection().await?;
         MessageRepository::update_status(&conn, id, status, error_message).await
+    }
+
+    // ============ Attachment Methods ============
+
+    /// Create a new attachment record
+    pub async fn create_attachment(
+        &self,
+        id: Uuid,
+        message_id: Uuid,
+        attachment_type: attachment::AttachmentType,
+        name: String,
+        mime_type: String,
+        file_path: String,
+        file_size: i64,
+    ) -> Result<attachment::Model> {
+        let conn = self.get_connection().await?;
+        AttachmentRepository::create(
+            &conn,
+            id,
+            message_id,
+            attachment_type,
+            name,
+            mime_type,
+            file_path,
+            file_size,
+        )
+        .await
+    }
+
+    /// List attachments for a message
+    pub async fn list_attachments(&self, message_id: Uuid) -> Result<Vec<attachment::Model>> {
+        let conn = self.get_connection().await?;
+        AttachmentRepository::list_by_message(&conn, message_id).await
     }
 
     /// Shutdown the database

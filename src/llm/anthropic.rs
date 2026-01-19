@@ -57,7 +57,31 @@ struct AnthropicRequest {
 #[derive(Debug, Serialize)]
 struct AnthropicMessage {
     role: String,
-    content: String,
+    content: AnthropicContent,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(untagged)]
+enum AnthropicContent {
+    Text(String),
+    Blocks(Vec<AnthropicContentBlock>),
+}
+
+#[derive(Debug, Serialize)]
+#[serde(tag = "type")]
+enum AnthropicContentBlock {
+    #[serde(rename = "text")]
+    Text { text: String },
+    #[serde(rename = "image")]
+    Image { source: AnthropicImageSource },
+}
+
+#[derive(Debug, Serialize)]
+struct AnthropicImageSource {
+    #[serde(rename = "type")]
+    source_type: String,
+    media_type: String,
+    data: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -288,13 +312,38 @@ impl LlmProvider for AnthropicProvider {
         let anthropic_messages: Vec<AnthropicMessage> = messages
             .iter()
             .filter(|m| m.role != Role::System)
-            .map(|m| AnthropicMessage {
-                role: match m.role {
-                    Role::User => "user".to_string(),
-                    Role::Assistant => "assistant".to_string(),
-                    Role::System => unreachable!(),
-                },
-                content: m.content.clone(),
+            .map(|m| {
+                let content = if m.attachments.is_empty() {
+                    AnthropicContent::Text(m.content.clone())
+                } else {
+                    let mut blocks = Vec::new();
+                    // Add images first
+                    for att in &m.attachments {
+                        blocks.push(AnthropicContentBlock::Image {
+                            source: AnthropicImageSource {
+                                source_type: "base64".to_string(),
+                                media_type: att.mime_type.clone(),
+                                data: att.base64_data(),
+                            },
+                        });
+                    }
+                    // Then add text
+                    if !m.content.is_empty() {
+                        blocks.push(AnthropicContentBlock::Text {
+                            text: m.content.clone(),
+                        });
+                    }
+                    AnthropicContent::Blocks(blocks)
+                };
+
+                AnthropicMessage {
+                    role: match m.role {
+                        Role::User => "user".to_string(),
+                        Role::Assistant => "assistant".to_string(),
+                        Role::System => unreachable!(),
+                    },
+                    content,
+                }
             })
             .collect();
 

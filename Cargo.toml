@@ -42,6 +42,12 @@ rust-embed = "8"
 # HTTP client
 reqwest = { version = "0.12", features = ["json", "stream"] }
 
+# File dialog
+rfd = "0.15"
+
+# Base64 encoding
+base64 = "0.22"
+
 # Async
 tokio = { version = "1", features = ["full"] }
 futures = "0.3"

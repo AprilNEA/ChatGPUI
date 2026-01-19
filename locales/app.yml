@@ -230,3 +230,20 @@ settings.icon_menubar:
 settings.icon_both:
   en: "Both"
   zh-CN: "两者都显示"
+
+# Attachment
+chat.add_attachment:
+  en: "Add attachment"
+  zh-CN: "添加附件"
+
+chat.remove_attachment:
+  en: "Remove"
+  zh-CN: "移除"
+
+chat.image_too_large:
+  en: "Image too large (max 20MB)"
+  zh-CN: "图片过大（最大 20MB）"
+
+chat.unsupported_format:
+  en: "Unsupported image format"
+  zh-CN: "不支持的图片格式"

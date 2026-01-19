@@ -6,6 +6,6 @@ pub mod manager;
 pub mod repository;
 pub mod service;
 
-pub use entity::{conversation, message};
+pub use entity::{attachment, conversation, message};
 #[allow(unused_imports)]
 pub use service::{DatabaseService, get_db, init};

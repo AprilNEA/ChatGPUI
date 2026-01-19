@@ -21,6 +21,7 @@ mod message_input;
 mod message_list;
 mod model_selector;
 mod settings;
+mod storage;
 
 use gpui::*;
 use gpui_component::Root;

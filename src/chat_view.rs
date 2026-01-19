@@ -11,12 +11,13 @@ use gpui_tokio_bridge::Tokio;
 use uuid::Uuid;
 
 use crate::{
-    database::{self, message as db_message},
+    database::{self, attachment as db_attachment, message as db_message},
     llm::{self, LlmProvider, StreamEvent},
-    message::{ChatMessage, Message, MessageStatus, Role},
+    message::{Attachment, AttachmentType, ChatMessage, Message, MessageStatus, Role},
     message_input::{MessageInput, SubmitEvent},
     message_list::MessageList,
     settings::get_settings,
+    storage,
 };
 
 /// Debounce interval for streaming updates (ms).
@@ -68,7 +69,12 @@ impl ChatView {
             &message_input,
             window,
             |this, _, event: &SubmitEvent, window, cx| {
-                this.handle_user_message(event.0.clone(), window, cx);
+                this.handle_user_message(
+                    event.content.clone(),
+                    event.attachments.clone(),
+                    window,
+                    cx,
+                );
             },
         );
 
@@ -111,16 +117,53 @@ impl ChatView {
         let (tx, rx) = async_channel::unbounded();
 
         Tokio::spawn(cx, async move {
-            let result = db.list_messages(conversation_id).await;
-            let _ = tx.send(result).await;
+            let messages_result = db.list_messages(conversation_id).await;
+
+            if let Ok(db_messages) = messages_result {
+                let mut messages_with_attachments = Vec::new();
+
+                for msg in db_messages {
+                    // Load attachments for this message
+                    let attachments = if let Ok(db_attachments) = db.list_attachments(msg.id).await
+                    {
+                        let mut loaded_attachments = Vec::new();
+                        for db_att in db_attachments {
+                            // Load file data from storage
+                            if let Ok(data) = storage::load_attachment(&db_att.file_path).await {
+                                let att_type = match db_att.attachment_type {
+                                    db_attachment::AttachmentType::Image => AttachmentType::Image,
+                                };
+                                loaded_attachments.push(Attachment {
+                                    id: db_att.id,
+                                    attachment_type: att_type,
+                                    name: db_att.name,
+                                    mime_type: db_att.mime_type,
+                                    data,
+                                });
+                            }
+                        }
+                        loaded_attachments
+                    } else {
+                        Vec::new()
+                    };
+
+                    messages_with_attachments.push((msg, attachments));
+                }
+
+                let _ = tx.send(Ok(messages_with_attachments)).await;
+            } else {
+                let _ = tx
+                    .send(Err(messages_result.unwrap_err()))
+                    .await;
+            }
         })
         .detach();
 
         cx.spawn(async move |this, cx| {
-            if let Ok(Ok(db_messages)) = rx.recv().await {
+            if let Ok(Ok(messages_with_attachments)) = rx.recv().await {
                 let _ = cx.update(|app| {
                     let _ = this.update(app, |this, cx| {
-                        for msg in db_messages {
+                        for (msg, attachments) in messages_with_attachments {
                             let role = match msg.role {
                                 db_message::MessageRole::System => Role::System,
                                 db_message::MessageRole::User => Role::User,
@@ -138,6 +181,7 @@ impl ChatView {
                                 id: msg.id,
                                 role,
                                 content: msg.content,
+                                attachments,
                                 status,
                                 created_at: msg.created_at,
                             });
@@ -153,31 +197,88 @@ impl ChatView {
     fn handle_user_message(
         &mut self,
         content: String,
+        attachments: Vec<Attachment>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if content.trim().is_empty() || self.is_generating {
+        if content.trim().is_empty() && attachments.is_empty() || self.is_generating {
             return;
         }
 
-        let user_message = Message::user(&content);
+        let user_message = if attachments.is_empty() {
+            Message::user(&content)
+        } else {
+            Message::user_with_attachments(&content, attachments.clone())
+        };
         self.messages.push(user_message.clone());
         self.update_message_list(cx);
 
         // Create conversation if this is the first message
         if self.current_conversation_id.is_none() {
-            self.create_conversation_and_save_message(content.clone(), user_message.id, cx);
+            self.create_conversation_and_save_message(
+                content.clone(),
+                user_message.id,
+                attachments,
+                cx,
+            );
         } else {
             self.save_message_to_db(user_message.id, Role::User, content.clone(), cx);
+            self.save_attachments_to_storage(user_message.id, attachments, cx);
         }
 
         self.generate_response(window, cx);
+    }
+
+    fn save_attachments_to_storage(
+        &self,
+        message_id: Uuid,
+        attachments: Vec<Attachment>,
+        cx: &mut Context<Self>,
+    ) {
+        if attachments.is_empty() {
+            return;
+        }
+
+        let db = database::get_db(cx).clone();
+
+        Tokio::spawn(cx, async move {
+            for att in attachments {
+                // Save file to storage
+                let extension = storage::extension_from_mime(&att.mime_type);
+                let file_size = att.data.len() as i64;
+
+                match storage::save_attachment(att.id, &att.data, extension).await {
+                    Ok(file_path) => {
+                        // Save record to database
+                        if let Err(e) = db
+                            .create_attachment(
+                                att.id,
+                                message_id,
+                                db_attachment::AttachmentType::Image,
+                                att.name,
+                                att.mime_type,
+                                file_path,
+                                file_size,
+                            )
+                            .await
+                        {
+                            tracing::error!("Failed to save attachment record: {}", e);
+                        }
+                    }
+                    Err(e) => {
+                        tracing::error!("Failed to save attachment file: {}", e);
+                    }
+                }
+            }
+        })
+        .detach();
     }
 
     fn create_conversation_and_save_message(
         &mut self,
         first_message: String,
         message_id: Uuid,
+        attachments: Vec<Attachment>,
         cx: &mut Context<Self>,
     ) {
         let db = database::get_db(cx).clone();
@@ -217,6 +318,27 @@ impl ChatView {
                         db_message::MessageStatus::Done,
                     )
                     .await;
+
+                // Save attachments
+                for att in attachments {
+                    let extension = storage::extension_from_mime(&att.mime_type);
+                    let file_size = att.data.len() as i64;
+
+                    if let Ok(file_path) = storage::save_attachment(att.id, &att.data, extension).await {
+                        let _ = db
+                            .create_attachment(
+                                att.id,
+                                message_id,
+                                db_attachment::AttachmentType::Image,
+                                att.name,
+                                att.mime_type,
+                                file_path,
+                                file_size,
+                            )
+                            .await;
+                    }
+                }
+
                 let _ = tx.send(conv.id).await;
             }
         })
@@ -281,6 +403,7 @@ impl ChatView {
                 id: Uuid::now_v7(),
                 role: Role::Assistant,
                 content: "Error: No LLM provider configured. Please go to Settings (⌘,) to set up a provider.".to_string(),
+                attachments: Vec::new(),
                 status: MessageStatus::Error("Provider not configured".to_string()),
                 created_at: chrono::Utc::now(),
             });
@@ -354,6 +477,7 @@ impl ChatView {
                                     id: message_id,
                                     role: Role::Assistant,
                                     content: content.clone(),
+                                    attachments: Vec::new(),
                                     status: MessageStatus::Done,
                                     created_at: chrono::Utc::now(),
                                 });

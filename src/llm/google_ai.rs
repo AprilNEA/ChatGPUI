@@ -59,8 +59,16 @@ struct GoogleAIContent {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-struct GoogleAIPart {
-    text: String,
+#[serde(untagged)]
+enum GoogleAIPart {
+    Text { text: String },
+    InlineData { inline_data: GoogleAIInlineData },
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct GoogleAIInlineData {
+    mime_type: String,
+    data: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -263,7 +271,7 @@ impl LlmProvider for GoogleAIProvider {
             .find(|m| m.role == Role::System)
             .map(|m| GoogleAIContent {
                 role: "user".to_string(), // Google uses "user" role for system instructions
-                parts: vec![GoogleAIPart {
+                parts: vec![GoogleAIPart::Text {
                     text: m.content.clone(),
                 }],
             });
@@ -272,15 +280,32 @@ impl LlmProvider for GoogleAIProvider {
         let contents: Vec<GoogleAIContent> = messages
             .iter()
             .filter(|m| m.role != Role::System)
-            .map(|m| GoogleAIContent {
-                role: match m.role {
-                    Role::User => "user".to_string(),
-                    Role::Assistant => "model".to_string(),
-                    Role::System => unreachable!(),
-                },
-                parts: vec![GoogleAIPart {
-                    text: m.content.clone(),
-                }],
+            .map(|m| {
+                let mut parts = Vec::new();
+                // Add images first
+                for att in &m.attachments {
+                    parts.push(GoogleAIPart::InlineData {
+                        inline_data: GoogleAIInlineData {
+                            mime_type: att.mime_type.clone(),
+                            data: att.base64_data(),
+                        },
+                    });
+                }
+                // Then add text
+                if !m.content.is_empty() {
+                    parts.push(GoogleAIPart::Text {
+                        text: m.content.clone(),
+                    });
+                }
+
+                GoogleAIContent {
+                    role: match m.role {
+                        Role::User => "user".to_string(),
+                        Role::Assistant => "model".to_string(),
+                        Role::System => unreachable!(),
+                    },
+                    parts,
+                }
             })
             .collect();
 
@@ -347,8 +372,10 @@ impl LlmProvider for GoogleAIProvider {
                             for candidate in candidates {
                                 if let Some(content) = candidate.content {
                                     for part in content.parts {
-                                        if !part.text.is_empty() {
-                                            tx.send(StreamEvent::Delta(part.text)).await.ok();
+                                        if let GoogleAIPart::Text { text } = part {
+                                            if !text.is_empty() {
+                                                tx.send(StreamEvent::Delta(text)).await.ok();
+                                            }
                                         }
                                     }
                                 }

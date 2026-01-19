@@ -11,7 +11,7 @@ use sea_orm::{
 };
 use uuid::Uuid;
 
-use entity::{conversation, message};
+use entity::{attachment, conversation, message};
 
 /// Repository for conversation operations
 pub struct ConversationRepository;
@@ -182,6 +182,56 @@ impl MessageRepository {
     /// Delete a message
     pub async fn delete(db: &DatabaseConnection, id: Uuid) -> Result<()> {
         message::Entity::delete_by_id(id).exec(db).await?;
+        Ok(())
+    }
+}
+
+/// Repository for attachment operations
+pub struct AttachmentRepository;
+
+impl AttachmentRepository {
+    /// Create a new attachment record
+    pub async fn create(
+        db: &DatabaseConnection,
+        id: Uuid,
+        message_id: Uuid,
+        attachment_type: attachment::AttachmentType,
+        name: String,
+        mime_type: String,
+        file_path: String,
+        file_size: i64,
+    ) -> Result<attachment::Model> {
+        let att = attachment::ActiveModel {
+            id: Set(id),
+            message_id: Set(message_id),
+            attachment_type: Set(attachment_type),
+            name: Set(name),
+            mime_type: Set(mime_type),
+            file_path: Set(file_path),
+            file_size: Set(file_size),
+            created_at: Set(Utc::now()),
+        };
+
+        let result = att.insert(db).await?;
+        Ok(result)
+    }
+
+    /// Get all attachments for a message
+    pub async fn list_by_message(
+        db: &DatabaseConnection,
+        message_id: Uuid,
+    ) -> Result<Vec<attachment::Model>> {
+        let attachments = attachment::Entity::find()
+            .filter(attachment::Column::MessageId.eq(message_id))
+            .order_by_asc(attachment::Column::CreatedAt)
+            .all(db)
+            .await?;
+        Ok(attachments)
+    }
+
+    /// Delete an attachment record
+    pub async fn delete(db: &DatabaseConnection, id: Uuid) -> Result<()> {
+        attachment::Entity::delete_by_id(id).exec(db).await?;
         Ok(())
     }
 }

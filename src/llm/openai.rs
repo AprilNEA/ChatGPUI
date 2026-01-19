@@ -53,7 +53,28 @@ struct OpenAIRequest {
 #[derive(Debug, Serialize)]
 struct OpenAIMessage {
     role: String,
-    content: String,
+    content: OpenAIContent,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(untagged)]
+enum OpenAIContent {
+    Text(String),
+    Parts(Vec<OpenAIContentPart>),
+}
+
+#[derive(Debug, Serialize)]
+#[serde(tag = "type")]
+enum OpenAIContentPart {
+    #[serde(rename = "text")]
+    Text { text: String },
+    #[serde(rename = "image_url")]
+    ImageUrl { image_url: OpenAIImageUrl },
+}
+
+#[derive(Debug, Serialize)]
+struct OpenAIImageUrl {
+    url: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -250,13 +271,36 @@ impl LlmProvider for OpenAIProvider {
         // Convert messages to OpenAI format
         let openai_messages: Vec<OpenAIMessage> = messages
             .iter()
-            .map(|m| OpenAIMessage {
-                role: match m.role {
-                    Role::User => "user".to_string(),
-                    Role::Assistant => "assistant".to_string(),
-                    Role::System => "system".to_string(),
-                },
-                content: m.content.clone(),
+            .map(|m| {
+                let content = if m.attachments.is_empty() {
+                    OpenAIContent::Text(m.content.clone())
+                } else {
+                    let mut parts = Vec::new();
+                    // Add text first
+                    if !m.content.is_empty() {
+                        parts.push(OpenAIContentPart::Text {
+                            text: m.content.clone(),
+                        });
+                    }
+                    // Then add images
+                    for att in &m.attachments {
+                        let data_url =
+                            format!("data:{};base64,{}", att.mime_type, att.base64_data());
+                        parts.push(OpenAIContentPart::ImageUrl {
+                            image_url: OpenAIImageUrl { url: data_url },
+                        });
+                    }
+                    OpenAIContent::Parts(parts)
+                };
+
+                OpenAIMessage {
+                    role: match m.role {
+                        Role::User => "user".to_string(),
+                        Role::Assistant => "assistant".to_string(),
+                        Role::System => "system".to_string(),
+                    },
+                    content,
+                }
             })
             .collect();
 
