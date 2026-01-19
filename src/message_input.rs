@@ -14,6 +14,7 @@ use gpui_component::{
 pub struct MessageInput {
     input_state: Entity<InputState>,
     is_loading: bool,
+    pending_newline: bool, // Flag to insert newline on next frame
 }
 
 pub struct SubmitEvent(pub String);
@@ -26,14 +27,32 @@ impl MessageInput {
             InputState::new(window, cx)
                 .placeholder("Type your message...")
                 .clean_on_escape()
+                .auto_grow(1, 10) // Support multiline display
         });
 
         cx.subscribe_in(
             &input_state,
             window,
             |this, _, event: &InputEvent, window, cx| {
-                if let InputEvent::PressEnter { secondary: _ } = event {
-                    this.handle_submit(window, cx);
+                if let InputEvent::PressEnter { secondary } = event {
+                    if *secondary {
+                        // Cmd+Enter: insert newline (component already inserted it)
+                        // Do nothing, keep the newline
+                    } else if this.pending_newline {
+                        // Shift+Enter was pressed, keep the newline
+                        this.pending_newline = false;
+                    } else {
+                        // Plain Enter: submit message
+                        // Remove the trailing newline that was just inserted by the component
+                        this.input_state.update(cx, |state, cx| {
+                            let value = state.value().to_string();
+                            if value.ends_with('\n') {
+                                let trimmed = value[..value.len() - 1].to_string();
+                                state.set_value(trimmed, window, cx);
+                            }
+                        });
+                        this.handle_submit(window, cx);
+                    }
                 }
             },
         )
@@ -42,7 +61,17 @@ impl MessageInput {
         Self {
             input_state,
             is_loading: false,
+            pending_newline: false,
         }
+    }
+
+    fn handle_shift_enter(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.pending_newline = true;
+        // Manually insert newline
+        self.input_state.update(cx, |state, cx| {
+            state.insert("\n", window, cx);
+        });
+        cx.notify();
     }
 
     pub fn set_loading(&mut self, loading: bool, cx: &mut Context<Self>) {
@@ -82,6 +111,12 @@ impl Render for MessageInput {
             .border_t_1()
             .border_color(theme.border)
             .bg(theme.background)
+            .on_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
+                // Check for Shift+Enter
+                if event.keystroke.key == "enter" && event.keystroke.modifiers.shift {
+                    this.handle_shift_enter(window, cx);
+                }
+            }))
             .child(
                 v_flex()
                     .flex_1()
