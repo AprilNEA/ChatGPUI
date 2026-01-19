@@ -112,13 +112,14 @@ impl DatabaseService {
     /// Create a new message
     pub async fn create_message(
         &self,
+        id: Uuid,
         conversation_id: Uuid,
         role: message::MessageRole,
         content: String,
         status: message::MessageStatus,
     ) -> Result<message::Model> {
         let conn = self.get_connection().await?;
-        MessageRepository::create(&conn, conversation_id, role, content, status).await
+        MessageRepository::create(&conn, id, conversation_id, role, content, status).await
     }
 
     /// List messages for a conversation

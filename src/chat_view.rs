@@ -41,6 +41,8 @@ pub struct ChatView {
     debounce_task: Option<Task<()>>,
     /// Buffered streaming content accumulated during the debounce window.
     pending_stream_chunk: String,
+    /// Current streaming message id for persistence.
+    streaming_message_id: Option<Uuid>,
 }
 
 impl EventEmitter<ConversationUpdatedEvent> for ChatView {}
@@ -84,6 +86,7 @@ impl ChatView {
             _subscription,
             debounce_task: None,
             pending_stream_chunk: String::new(),
+            streaming_message_id: None,
         }
     }
 
@@ -93,6 +96,7 @@ impl ChatView {
         self.messages
             .push(Message::system("You are a helpful assistant."));
         self.current_conversation_id = None;
+        self.streaming_message_id = None;
         self.update_message_list(cx);
     }
 
@@ -173,7 +177,7 @@ impl ChatView {
     fn create_conversation_and_save_message(
         &mut self,
         first_message: String,
-        _message_id: Uuid,
+        message_id: Uuid,
         cx: &mut Context<Self>,
     ) {
         let db = database::get_db(cx).clone();
@@ -206,6 +210,7 @@ impl ChatView {
                 // Save the first message
                 let _ = db
                     .create_message(
+                        message_id,
                         conv.id,
                         db_message::MessageRole::User,
                         first_message_clone,
@@ -232,7 +237,7 @@ impl ChatView {
 
     fn save_message_to_db(
         &self,
-        _message_id: Uuid,
+        message_id: Uuid,
         role: Role,
         content: String,
         cx: &mut Context<Self>,
@@ -251,6 +256,7 @@ impl ChatView {
         Tokio::spawn(cx, async move {
             let _ = db
                 .create_message(
+                    message_id,
                     conversation_id,
                     db_role,
                     content,
@@ -272,7 +278,7 @@ impl ChatView {
 
         let Some(provider) = self.llm_provider.clone() else {
             self.messages.push(Message {
-                id: uuid::Uuid::new_v4(),
+                id: Uuid::now_v7(),
                 role: Role::Assistant,
                 content: "Error: No LLM provider configured. Please go to Settings (⌘,) to set up a provider.".to_string(),
                 status: MessageStatus::Error("Provider not configured".to_string()),
@@ -288,8 +294,10 @@ impl ChatView {
         });
 
         // Start streaming message (handled separately in MessageList).
+        let streaming_message = Message::assistant_streaming();
+        self.streaming_message_id = Some(streaming_message.id);
         self.message_list.update(cx, |list, cx| {
-            list.start_streaming(cx);
+            list.start_streaming(streaming_message, cx);
         });
 
         let messages: Vec<ChatMessage> = self
@@ -332,14 +340,24 @@ impl ChatView {
                         let content = accumulated_content.clone();
                         let _ = cx.update(|app| {
                             let _ = this.update(app, |this, cx| {
+                                let message_id = this
+                                    .streaming_message_id
+                                    .take()
+                                    .unwrap_or_else(Uuid::now_v7);
                                 this.flush_pending_stream_chunk(cx);
                                 // Finish streaming message.
                                 this.message_list.update(cx, |list, cx| {
                                     list.finish_streaming(cx);
                                 });
                                 // Persist to local list (used for future API requests).
-                                this.messages.push(Message::new(Role::Assistant, &content));
-                                this.finish_generating_with_content(content, cx);
+                                this.messages.push(Message {
+                                    id: message_id,
+                                    role: Role::Assistant,
+                                    content: content.clone(),
+                                    status: MessageStatus::Done,
+                                    created_at: chrono::Utc::now(),
+                                });
+                                this.finish_generating_with_content(message_id, content, cx);
                             });
                         });
                         break;
@@ -351,6 +369,7 @@ impl ChatView {
                                 this.message_list.update(cx, |list, cx| {
                                     list.set_streaming_error(&err, cx);
                                 });
+                                this.streaming_message_id = None;
                                 this.finish_generating(cx);
                             });
                         });
@@ -370,10 +389,16 @@ impl ChatView {
         // Clear debounce task.
         self.debounce_task = None;
         self.pending_stream_chunk.clear();
+        self.streaming_message_id = None;
         cx.notify();
     }
 
-    fn finish_generating_with_content(&mut self, content: String, cx: &mut Context<Self>) {
+    fn finish_generating_with_content(
+        &mut self,
+        message_id: Uuid,
+        content: String,
+        cx: &mut Context<Self>,
+    ) {
         self.is_generating = false;
         self.message_input.update(cx, |input, cx| {
             input.set_loading(false, cx);
@@ -382,9 +407,10 @@ impl ChatView {
         // Clear debounce task.
         self.debounce_task = None;
         self.pending_stream_chunk.clear();
+        self.streaming_message_id = None;
 
         // Save assistant message to database
-        self.save_message_to_db(Uuid::new_v4(), Role::Assistant, content, cx);
+        self.save_message_to_db(message_id, Role::Assistant, content, cx);
 
         cx.notify();
     }

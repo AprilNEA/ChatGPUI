@@ -35,7 +35,7 @@ pub struct Message {
 impl Message {
     pub fn new(role: Role, content: impl Into<String>) -> Self {
         Self {
-            id: Uuid::new_v4(),
+            id: Uuid::now_v7(),
             role,
             content: content.into(),
             status: MessageStatus::Done,
@@ -54,7 +54,7 @@ impl Message {
 
     pub fn assistant_streaming() -> Self {
         Self {
-            id: Uuid::new_v4(),
+            id: Uuid::now_v7(),
             role: Role::Assistant,
             content: String::new(),
             status: MessageStatus::Streaming,

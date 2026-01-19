@@ -64,7 +64,7 @@ tracing-subscriber = "0.3"
 shadow-rs = { version = "0.37", default-features = false }
 
 # UUID for message IDs
-uuid = { version = "1.0", features = ["v4"] }
+uuid = { version = "1.0", features = ["v4", "v7"] }
 
 # Time
 chrono = "0.4"

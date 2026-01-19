@@ -2,6 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -9,14 +10,17 @@ use gpui::prelude::FluentBuilder;
 use gpui::*;
 use gpui_component::{ActiveTheme, h_flex, label::Label, skeleton::Skeleton, v_flex};
 use gpui_markdown::Markdown;
+use uuid::Uuid;
 
 use crate::message::{Message, MessageStatus, Role};
 
 pub struct MessageList {
-    /// Historical messages (Arc to avoid cloning).
-    messages: Vec<Arc<Message>>,
-    /// Current streaming message (mutable, updated independently).
-    streaming_message: Option<Message>,
+    /// History items keyed by message id for stable identity.
+    message_index: HashMap<Uuid, Entity<MessageItem>>,
+    /// Ordered history items.
+    message_items: Vec<Entity<MessageItem>>,
+    /// Current streaming item (mutable, updated independently).
+    streaming_item: Option<Entity<MessageItem>>,
     scroll_handle: ScrollHandle,
     /// Whether to scroll to bottom on next render.
     pending_scroll_to_bottom: bool,
@@ -25,8 +29,9 @@ pub struct MessageList {
 impl MessageList {
     pub fn new(_cx: &mut Context<Self>) -> Self {
         Self {
-            messages: Vec::new(),
-            streaming_message: None,
+            message_index: HashMap::new(),
+            message_items: Vec::new(),
+            streaming_item: None,
             scroll_handle: ScrollHandle::new(),
             pending_scroll_to_bottom: false,
         }
@@ -39,16 +44,33 @@ impl MessageList {
             .into_iter()
             .partition(|m| matches!(m.status, MessageStatus::Streaming));
 
-        let new_message_added = history.len() > self.messages.len();
+        let new_message_added = history.len() > self.message_items.len();
 
-        // Wrap history messages in Arc.
-        self.messages = history.into_iter().map(Arc::new).collect();
+        let mut next_index = HashMap::with_capacity(history.len());
+        let mut next_items = Vec::with_capacity(history.len());
+
+        for message in history {
+            let message_id = message.id;
+            let item = if let Some(existing) = self.message_index.get(&message_id) {
+                existing.clone()
+            } else {
+                cx.new(|_cx| MessageItem::from_arc(Arc::new(message)))
+            };
+            next_index.insert(message_id, item.clone());
+            next_items.push(item);
+        }
+
+        self.message_index = next_index;
+        self.message_items = next_items;
 
         // Store streaming message separately.
-        self.streaming_message = streaming.into_iter().next();
+        self.streaming_item = streaming
+            .into_iter()
+            .next()
+            .map(|message| cx.new(|_cx| MessageItem::from_streaming(message)));
 
         // If a new message arrives, mark scroll to bottom.
-        if new_message_added || self.streaming_message.is_some() {
+        if new_message_added || self.streaming_item.is_some() {
             self.pending_scroll_to_bottom = true;
         }
 
@@ -57,8 +79,11 @@ impl MessageList {
 
     /// Update streaming content only (avoid cloning all messages).
     pub fn update_streaming_content(&mut self, content: &str, cx: &mut Context<Self>) {
-        if let Some(ref mut msg) = self.streaming_message {
-            msg.content.push_str(content);
+        if let Some(item) = &self.streaming_item {
+            let chunk = content.to_string();
+            item.update(cx, move |item, cx| {
+                item.append_content(&chunk, cx);
+            });
             self.pending_scroll_to_bottom = true;
             cx.notify();
         }
@@ -66,25 +91,34 @@ impl MessageList {
 
     /// Finish streaming message and move it into history.
     pub fn finish_streaming(&mut self, cx: &mut Context<Self>) {
-        if let Some(mut msg) = self.streaming_message.take() {
-            msg.status = MessageStatus::Done;
-            self.messages.push(Arc::new(msg));
+        if let Some(item) = self.streaming_item.take() {
+            item.update(cx, |item, cx| {
+                item.set_status(MessageStatus::Done, cx);
+            });
+            let message_id = item.read(cx).id();
+            self.message_items.push(item.clone());
+            self.message_index.insert(message_id, item);
             cx.notify();
         }
     }
 
     /// Set error state for streaming message.
     pub fn set_streaming_error(&mut self, error: &str, cx: &mut Context<Self>) {
-        if let Some(mut msg) = self.streaming_message.take() {
-            msg.status = MessageStatus::Error(error.to_string());
-            self.messages.push(Arc::new(msg));
+        if let Some(item) = self.streaming_item.take() {
+            let error = error.to_string();
+            item.update(cx, move |item, cx| {
+                item.set_status(MessageStatus::Error(error), cx);
+            });
+            let message_id = item.read(cx).id();
+            self.message_items.push(item.clone());
+            self.message_index.insert(message_id, item);
             cx.notify();
         }
     }
 
     /// Start a new streaming message.
-    pub fn start_streaming(&mut self, cx: &mut Context<Self>) {
-        self.streaming_message = Some(Message::assistant_streaming());
+    pub fn start_streaming(&mut self, message: Message, cx: &mut Context<Self>) {
+        self.streaming_item = Some(cx.new(|_cx| MessageItem::from_streaming(message)));
         self.pending_scroll_to_bottom = true;
         cx.notify();
     }
@@ -98,17 +132,14 @@ impl Render for MessageList {
             self.pending_scroll_to_bottom = false;
         }
 
-        // History messages (Arc, no full Message clone).
+        // History items (entities with stable identity).
         let history_items = self
-            .messages
+            .message_items
             .iter()
-            .map(|msg| MessageItem::from_arc(msg.clone()));
+            .cloned();
 
         // Streaming message (if any).
-        let streaming_item = self
-            .streaming_message
-            .as_ref()
-            .map(|msg| MessageItem::from_streaming(msg));
+        let streaming_item = self.streaming_item.clone();
 
         div()
             .id("message-list")
@@ -136,33 +167,46 @@ enum MessageSource {
     /// Snapshot of streaming message (clone content only).
     Snapshot {
         role: Role,
-        content: SharedString,
+        content: String,
         status: MessageStatus,
     },
 }
 
-#[derive(IntoElement)]
 pub struct MessageItem {
+    id: Uuid,
+    element_id: SharedString,
     source: MessageSource,
 }
 
 impl MessageItem {
-    /// Build from Arc (history message, no full clone).
-    pub fn from_arc(message: Arc<Message>) -> Self {
+    fn new(id: Uuid, source: MessageSource) -> Self {
         Self {
-            source: MessageSource::Arc(message),
+            id,
+            element_id: SharedString::from(format!("message-{}", id)),
+            source,
         }
     }
 
+    /// Build from Arc (history message, no full clone).
+    pub fn from_arc(message: Arc<Message>) -> Self {
+        Self::new(message.id, MessageSource::Arc(message))
+    }
+
     /// Build snapshot from streaming message (clone content only).
-    pub fn from_streaming(message: &Message) -> Self {
-        Self {
-            source: MessageSource::Snapshot {
+    pub fn from_streaming(message: Message) -> Self {
+        let id = message.id;
+        Self::new(
+            id,
+            MessageSource::Snapshot {
                 role: message.role,
-                content: message.content.clone().into(),
-                status: message.status.clone(),
+                content: message.content,
+                status: message.status,
             },
-        }
+        )
+    }
+
+    pub fn id(&self) -> Uuid {
+        self.id
     }
 
     fn role(&self) -> Role {
@@ -175,7 +219,7 @@ impl MessageItem {
     fn content(&self) -> SharedString {
         match &self.source {
             MessageSource::Arc(msg) => msg.content.clone().into(),
-            MessageSource::Snapshot { content, .. } => content.clone(),
+            MessageSource::Snapshot { content, .. } => content.clone().into(),
         }
     }
 
@@ -185,10 +229,28 @@ impl MessageItem {
             MessageSource::Snapshot { status, .. } => status,
         }
     }
+
+    fn append_content(&mut self, chunk: &str, cx: &mut Context<Self>) {
+        if let MessageSource::Snapshot { content, .. } = &mut self.source {
+            content.push_str(chunk);
+            cx.notify();
+        }
+    }
+
+    fn set_status(&mut self, status: MessageStatus, cx: &mut Context<Self>) {
+        if let MessageSource::Snapshot {
+            status: current_status,
+            ..
+        } = &mut self.source
+        {
+            *current_status = status;
+            cx.notify();
+        }
+    }
 }
 
-impl RenderOnce for MessageItem {
-    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+impl Render for MessageItem {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
         let role = self.role();
         let content = self.content();
@@ -207,7 +269,11 @@ impl RenderOnce for MessageItem {
                 .text_color(theme.accent_foreground)
                 .child(v_flex().text_sm().child(Label::new(content)));
 
-            h_flex().w_full().justify_end().child(bubble)
+            h_flex()
+                .w_full()
+                .justify_end()
+                .child(bubble)
+                .id(self.element_id.clone())
         } else {
             // Assistant messages: full-width, no bubble, direct Markdown rendering
             v_flex()
@@ -313,6 +379,7 @@ impl RenderOnce for MessageItem {
                         this
                     }
                 })
+                .id(self.element_id.clone())
         }
         .into_any_element()
     }

@@ -27,7 +27,7 @@ impl ConversationRepository {
     ) -> Result<conversation::Model> {
         let now = Utc::now();
         let conversation = conversation::ActiveModel {
-            id: Set(Uuid::new_v4()),
+            id: Set(Uuid::now_v7()),
             title: Set(title),
             provider_id: Set(provider_id),
             model: Set(model),
@@ -104,13 +104,14 @@ impl MessageRepository {
     /// Create a new message
     pub async fn create(
         db: &DatabaseConnection,
+        id: Uuid,
         conversation_id: Uuid,
         role: message::MessageRole,
         content: String,
         status: message::MessageStatus,
     ) -> Result<message::Model> {
         let msg = message::ActiveModel {
-            id: Set(Uuid::new_v4()),
+            id: Set(id),
             conversation_id: Set(conversation_id),
             role: Set(role),
             content: Set(content),
