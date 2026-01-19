@@ -9,6 +9,7 @@ extern crate rust_i18n;
 
 i18n!("locales", fallback = "en");
 
+mod about;
 mod app;
 mod assets;
 mod chat_sidebar;
@@ -26,6 +27,7 @@ use gpui_component::Root;
 
 use crate::assets::Assets;
 
+use about::{OpenAbout, open_about_window};
 use settings::{OpenSettings, open_settings_window};
 
 actions!(app, [Quit]);
@@ -110,6 +112,7 @@ fn main() {
             cx.quit();
         });
         cx.on_action(|_: &OpenSettings, cx| open_settings_window(cx));
+        cx.on_action(|_: &OpenAbout, cx| open_about_window(cx));
 
         // Bind keyboard shortcuts
         cx.bind_keys([
@@ -121,7 +124,7 @@ fn main() {
         cx.set_menus(vec![Menu {
             name: t!("app.name").to_string().into(),
             items: vec![
-                MenuItem::action(t!("app.about").to_string(), Quit),
+                MenuItem::action(t!("app.about").to_string(), OpenAbout),
                 MenuItem::separator(),
                 MenuItem::action(t!("app.settings").to_string(), OpenSettings),
                 MenuItem::separator(),
@@ -134,7 +137,7 @@ fn main() {
                 let options = WindowOptions {
                     window_bounds: Some(WindowBounds::Windowed(Bounds::centered(
                         None,
-                        size(px(900.), px(700.)),
+                        size(px(1200.), px(800.)),
                         cx,
                     ))),
                     titlebar: Some(TitlebarOptions {

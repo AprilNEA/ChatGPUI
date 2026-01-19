@@ -1,5 +1,5 @@
 [tools]
-rust = "nightly"
+# rust = "nightly-2026-01-19"
 
 [tasks.clean]
 description = "Clean up PostgreSQL processes, shared memory, and database files"

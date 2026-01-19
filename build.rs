@@ -29,5 +29,10 @@ fn main() {
     println!("cargo:rerun-if-changed=Cargo.toml");
 
     // Build shadow-rs
+    // In debug mode, use fixed timestamp to enable incremental compilation
+    if std::env::var("PROFILE").unwrap_or_default() == "debug" {
+        // SAFETY: build.rs runs single-threaded before the main program
+        unsafe { std::env::set_var("SOURCE_DATE_EPOCH", "0") };
+    }
     ShadowBuilder::builder().build().unwrap();
 }

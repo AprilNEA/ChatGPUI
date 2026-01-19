@@ -4,12 +4,12 @@
 _version: 2
 
 app.name:
-  en: "GPUI Chat"
-  zh-CN: "GPUI Chat"
+  en: "ChatGPUI"
+  zh-CN: "ChatGPUI"
 
 app.about:
-  en: "About GPUI Chat"
-  zh-CN: "关于 GPUI Chat"
+  en: "About ChatGPUI"
+  zh-CN: "关于 ChatGPUI"
 
 app.settings:
   en: "Settings..."
@@ -18,6 +18,22 @@ app.settings:
 app.quit:
   en: "Quit"
   zh-CN: "退出"
+
+about.version:
+  en: "Version"
+  zh-CN: "版本"
+
+about.commit:
+  en: "Commit"
+  zh-CN: "提交"
+
+about.build_time:
+  en: "Build Time"
+  zh-CN: "构建时间"
+
+about.copyright:
+  en: "Copyright © 2026 AprilNEA LLC. All rights reserved."
+  zh-CN: "版权所有 © 2026 AprilNEA LLC"
 
 menu.select_model:
   en: "Select Model"
@@ -150,3 +166,67 @@ model_selector.all:
 model_selector.favorites:
   en: "Favorites"
   zh-CN: "收藏"
+
+# General Settings
+settings.language:
+  en: "Interface Language"
+  zh-CN: "界面语言"
+
+settings.send_shortcut:
+  en: "Send Message Shortcut"
+  zh-CN: "发送消息快捷键"
+
+settings.icon_placement:
+  en: "App Icon Placement"
+  zh-CN: "应用图标位置"
+
+settings.auto_scroll:
+  en: "Auto Scroll Chat"
+  zh-CN: "聊天界面自动下滑"
+
+settings.auto_scroll_desc:
+  en: "Auto scroll to bottom when generating response"
+  zh-CN: "在生成回复时自动滚动到聊天界面最底部"
+
+settings.proxy:
+  en: "Network Proxy"
+  zh-CN: "网络代理"
+
+settings.proxy_desc:
+  en: "Supports HTTP and SOCKS5 proxy"
+  zh-CN: "支持 HTTP 和 SOCKS5 代理"
+
+settings.proxy_placeholder:
+  en: "http://127.0.0.1:7890"
+  zh-CN: "http://127.0.0.1:7890"
+
+# Language options
+settings.lang_en:
+  en: "English"
+  zh-CN: "English"
+
+settings.lang_zh:
+  en: "简体中文"
+  zh-CN: "简体中文"
+
+# Shortcut options
+settings.shortcut_enter:
+  en: "Enter"
+  zh-CN: "Enter"
+
+settings.shortcut_cmd_enter:
+  en: "Cmd + Enter"
+  zh-CN: "Cmd + Enter"
+
+# Icon placement options
+settings.icon_dock:
+  en: "Dock Only"
+  zh-CN: "仅在 Dock"
+
+settings.icon_menubar:
+  en: "Menu Bar Only"
+  zh-CN: "仅在菜单栏"
+
+settings.icon_both:
+  en: "Both"
+  zh-CN: "两者都显示"

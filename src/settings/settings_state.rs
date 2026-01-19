@@ -8,11 +8,49 @@ use std::path::PathBuf;
 
 use super::Provider;
 
+/// Send message shortcut
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+pub enum SendShortcut {
+    #[default]
+    Enter,
+    CmdEnter,
+}
+
+/// Application icon placement
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+pub enum IconPlacement {
+    Dock,
+    MenuBar,
+    #[default]
+    Both,
+}
+
 /// Global application settings
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppSettings {
+    // Provider settings
     pub providers: Vec<Provider>,
     pub active_provider_id: Option<String>,
+
+    // General settings
+    #[serde(default = "default_language")]
+    pub language: String,
+    #[serde(default)]
+    pub send_shortcut: SendShortcut,
+    #[serde(default)]
+    pub icon_placement: IconPlacement,
+    #[serde(default = "default_auto_scroll")]
+    pub auto_scroll: bool,
+    #[serde(default)]
+    pub proxy: Option<String>,
+}
+
+fn default_language() -> String {
+    "en".to_string()
+}
+
+fn default_auto_scroll() -> bool {
+    true
 }
 
 impl Default for AppSettings {
@@ -30,6 +68,11 @@ impl Default for AppSettings {
                 Provider::openrouter(),
             ],
             active_provider_id: Some("anthropic".to_string()),
+            language: default_language(),
+            send_shortcut: SendShortcut::default(),
+            icon_placement: IconPlacement::default(),
+            auto_scroll: default_auto_scroll(),
+            proxy: None,
         }
     }
 }
