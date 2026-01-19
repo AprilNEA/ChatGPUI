@@ -159,7 +159,7 @@ fn main() {
                     ))),
                     titlebar: Some(TitlebarOptions {
                         appears_transparent: true,
-                        traffic_light_position: Some(point(px(14.), px(12.))),
+                        traffic_light_position: Some(point(px(14.), px(14.))),
                         ..Default::default()
                     }),
                     ..Default::default()

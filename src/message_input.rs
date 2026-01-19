@@ -9,7 +9,7 @@ use gpui_component::{
     button::{Button, ButtonVariants},
     h_flex,
     input::{Input, InputEvent, InputState},
-    menu::{DropdownMenu, PopupMenu, PopupMenuItem},
+    menu::{DropdownMenu, PopupMenuItem},
     v_flex,
 };
 
@@ -273,7 +273,6 @@ impl Render for MessageInput {
 
 impl MessageInput {
     fn render_toolbar(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = cx.theme();
         let is_loading = self.is_loading;
 
         h_flex()
@@ -287,7 +286,6 @@ impl MessageInput {
                         Button::new("attachment")
                             .icon(IconName::Plus)
                             .ghost()
-                            .xsmall()
                             .disabled(is_loading)
                             .on_click(cx.listener(|this, _, _window, cx| {
                                 this.handle_attachment_click(cx);
@@ -361,7 +359,6 @@ impl MessageInput {
         Button::new(id)
             .icon(icon)
             .ghost()
-            .xsmall()
             .selected(enabled)
             .disabled(is_loading)
             .on_click(handler)
@@ -375,7 +372,6 @@ impl MessageInput {
         Button::new("reasoning")
             .icon(IconName::Bot)
             .ghost()
-            .xsmall()
             .selected(is_enabled)
             .child(current_level.label())
             .dropdown_menu(move |menu, _window, _cx| {
@@ -468,7 +464,6 @@ impl MessageInput {
                                 Button::new(SharedString::from(format!("remove-{}", id)))
                                     .icon(IconName::Close)
                                     .ghost()
-                                    .xsmall()
                                     .on_click(cx.listener(move |this, _, _window, cx| {
                                         this.remove_attachment(id, cx);
                                     })),

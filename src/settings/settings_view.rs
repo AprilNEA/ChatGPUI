@@ -8,7 +8,7 @@ use gpui::{
     WindowBounds, WindowKind, WindowOptions, actions, point, prelude::FluentBuilder, px, size,
 };
 use gpui_component::{
-    ActiveTheme, Icon, IconName, IndexPath, Root, Sizable,
+    ActiveTheme, Icon, IconName, IndexPath, Root,
     button::{Button, ButtonVariants},
     divider::Divider,
     h_flex,
@@ -709,13 +709,11 @@ impl SettingsView {
                         Button::new("add-provider")
                             .icon(IconName::Plus)
                             .ghost()
-                            .xsmall(),
                     )
                     .child(
                         Button::new("remove-provider")
                             .icon(IconName::Minus)
                             .ghost()
-                            .xsmall(),
                     ),
             )
     }

@@ -154,21 +154,35 @@ impl SyntaxHighlighter {
                         el.into_any_element()
                     })
                     .collect();
-                div().flex().flex_row().children(spans).into_any_element()
+                div()
+                    .flex()
+                    .flex_row()
+                    .whitespace_nowrap()
+                    .flex_shrink_0()
+                    .children(spans)
+                    .into_any_element()
             })
             .collect();
 
-        v_flex().children(lines).into_any_element()
+        v_flex().flex_shrink_0().children(lines).into_any_element()
     }
 
     fn render_plain_lines(&self, code: &str) -> AnyElement {
         // Use .lines() instead of LinesWithEndings to avoid trailing newlines causing extra spacing
         let lines: Vec<AnyElement> = code
             .lines()
-            .map(|line| div().flex().flex_row().child(line.to_string()).into_any_element())
+            .map(|line| {
+                div()
+                    .flex()
+                    .flex_row()
+                    .whitespace_nowrap()
+                    .flex_shrink_0()
+                    .child(line.to_string())
+                    .into_any_element()
+            })
             .collect();
 
-        v_flex().children(lines).into_any_element()
+        v_flex().flex_shrink_0().children(lines).into_any_element()
     }
 }
 

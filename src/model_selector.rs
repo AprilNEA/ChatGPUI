@@ -179,30 +179,45 @@ impl ModelSelector {
             .unwrap_or_else(|| llm::get_models_for_provider(provider_id))
     }
 
-    fn render_provider_icon(provider_id: &str) -> Div {
-        let (icon_text, bg_color) = match provider_id {
-            "anthropic" => ("A", hsla(0.08, 0.8, 0.55, 1.0)),
-            "openai" => ("O", hsla(0.45, 0.7, 0.4, 1.0)),
-            "google_ai" => ("G", hsla(0.6, 0.8, 0.5, 1.0)),
-            "deepseek" => ("D", hsla(0.55, 0.7, 0.5, 1.0)),
-            "mistral" => ("M", hsla(0.75, 0.6, 0.5, 1.0)),
-            "groq" => ("G", hsla(0.95, 0.7, 0.5, 1.0)),
-            _ => ("?", hsla(0.0, 0.0, 0.5, 1.0)),
+    fn render_provider_icon(provider_id: &str, foreground: Hsla) -> Div {
+        // Provider ID to SVG icon path mapping
+        let icon_path = match provider_id {
+            "anthropic" => Some("icons/brand/anthropic.svg"),
+            "openai" => Some("icons/brand/openai.svg"),
+            "google_ai" => Some("icons/brand/google.svg"),
+            _ => None,
         };
 
-        div()
-            .size_6()
-            .rounded_sm()
-            .bg(bg_color)
-            .flex()
-            .items_center()
-            .justify_center()
-            .child(
-                Label::new(icon_text)
-                    .text_xs()
-                    .font_weight(FontWeight::BOLD)
-                    .text_color(white()),
-            )
+        if let Some(path) = icon_path {
+            div()
+                .size_6()
+                .flex()
+                .items_center()
+                .justify_center()
+                .child(svg().path(path).size_5().text_color(foreground))
+        } else {
+            // Fallback for providers without SVG icons
+            let (icon_text, bg_color) = match provider_id {
+                "deepseek" => ("D", hsla(0.55, 0.7, 0.5, 1.0)),
+                "mistral" => ("M", hsla(0.75, 0.6, 0.5, 1.0)),
+                "groq" => ("G", hsla(0.95, 0.7, 0.5, 1.0)),
+                _ => ("?", hsla(0.0, 0.0, 0.5, 1.0)),
+            };
+
+            div()
+                .size_6()
+                .rounded_sm()
+                .bg(bg_color)
+                .flex()
+                .items_center()
+                .justify_center()
+                .child(
+                    Label::new(icon_text)
+                        .text_xs()
+                        .font_weight(FontWeight::BOLD)
+                        .text_color(white()),
+                )
+        }
     }
 
     /// Format a number with K/M suffix
@@ -383,7 +398,7 @@ impl Render for ModelSelector {
                 h_flex()
                     .gap_1()
                     .items_center()
-                    .when(collapsed, |el| el.pl(px(96.)))
+                    .when(collapsed, |el| el.pl(px(128.)))
                     .child(
                         Popover::new("model-selector-popover")
                             .appearance(false)
@@ -487,6 +502,7 @@ impl Render for ModelSelector {
 
                                                 let provider_id = provider.id.clone();
                                                 let provider_name_display = provider.name.clone();
+                                                let foreground = theme.foreground;
 
                                                 // Provider header + models
                                                 std::iter::once(
@@ -496,7 +512,7 @@ impl Render for ModelSelector {
                                                         .py_2()
                                                         .gap_2()
                                                         .items_center()
-                                                        .child(Self::render_provider_icon(&provider_id))
+                                                        .child(Self::render_provider_icon(&provider_id, foreground))
                                                         .child(
                                                             Label::new(provider_name_display)
                                                                 .text_sm()
