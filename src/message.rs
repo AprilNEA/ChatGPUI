@@ -66,17 +66,6 @@ impl Message {
         Self::new(Role::System, content)
     }
 
-    pub fn append_content(&mut self, chunk: &str) {
-        self.content.push_str(chunk);
-    }
-
-    pub fn set_done(&mut self) {
-        self.status = MessageStatus::Done;
-    }
-
-    pub fn set_error(&mut self, error: impl Into<String>) {
-        self.status = MessageStatus::Error(error.into());
-    }
 }
 
 #[derive(Debug, Clone, Serialize)]

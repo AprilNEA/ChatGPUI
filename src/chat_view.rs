@@ -2,12 +2,13 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 
+use std::sync::Arc;
+use std::time::Duration;
+
 use gpui::*;
 use gpui_component::{ActiveTheme, v_flex};
 use gpui_tokio_bridge::Tokio;
 use uuid::Uuid;
-
-use std::sync::Arc;
 
 use crate::{
     database::{self, message as db_message},
@@ -17,6 +18,9 @@ use crate::{
     message_list::MessageList,
     settings::get_settings,
 };
+
+/// 流式更新的防抖间隔（毫秒）
+const STREAM_DEBOUNCE_MS: u64 = 50;
 
 /// Event emitted when a conversation is created or updated
 #[allow(dead_code)]
@@ -33,6 +37,10 @@ pub struct ChatView {
     is_generating: bool,
     current_conversation_id: Option<Uuid>,
     _subscription: Subscription,
+    /// 防抖任务：避免流式更新时频繁重渲染
+    debounce_task: Option<Task<()>>,
+    /// 是否有待处理的 UI 更新
+    pending_ui_update: bool,
 }
 
 impl EventEmitter<ConversationUpdatedEvent> for ChatView {}
@@ -74,6 +82,8 @@ impl ChatView {
             is_generating: false,
             current_conversation_id: None,
             _subscription,
+            debounce_task: None,
+            pending_ui_update: false,
         }
     }
 
@@ -277,8 +287,10 @@ impl ChatView {
             input.set_loading(true, cx);
         });
 
-        self.messages.push(Message::assistant_streaming());
-        self.update_message_list(cx);
+        // 开始流式消息（在 MessageList 中单独处理）
+        self.message_list.update(cx, |list, cx| {
+            list.start_streaming(cx);
+        });
 
         let messages: Vec<ChatMessage> = self
             .messages
@@ -301,27 +313,35 @@ impl ChatView {
 
         // Process stream events on GPUI
         cx.spawn(async move |this, cx| {
+            // 累积内容，用于最终保存到数据库
+            let mut accumulated_content = String::new();
+
             while let Ok(event) = rx.recv().await {
                 match event {
                     StreamEvent::Delta(content) => {
+                        accumulated_content.push_str(&content);
                         let _ = cx.update(|app| {
                             let _ = this.update(app, |this, cx| {
-                                if let Some(msg) = this.messages.last_mut() {
-                                    if matches!(msg.status, MessageStatus::Streaming) {
-                                        msg.append_content(&content);
-                                        this.update_message_list(cx);
-                                    }
-                                }
+                                // 直接更新 MessageList 的流式消息，无需克隆历史消息
+                                this.message_list.update(cx, |list, cx| {
+                                    list.update_streaming_content(&content, cx);
+                                });
+                                // 使用防抖机制（这里主要是为了滚动）
+                                this.schedule_debounced_update(cx);
                             });
                         });
                     }
                     StreamEvent::Done => {
+                        let content = accumulated_content.clone();
                         let _ = cx.update(|app| {
                             let _ = this.update(app, |this, cx| {
-                                if let Some(msg) = this.messages.last_mut() {
-                                    msg.set_done();
-                                }
-                                this.finish_generating(cx);
+                                // 完成流式消息
+                                this.message_list.update(cx, |list, cx| {
+                                    list.finish_streaming(cx);
+                                });
+                                // 保存到本地消息列表（用于发送 API 请求）
+                                this.messages.push(Message::new(Role::Assistant, &content));
+                                this.finish_generating_with_content(content, cx);
                             });
                         });
                         break;
@@ -329,9 +349,9 @@ impl ChatView {
                     StreamEvent::Error(err) => {
                         let _ = cx.update(|app| {
                             let _ = this.update(app, |this, cx| {
-                                if let Some(msg) = this.messages.last_mut() {
-                                    msg.set_error(&err);
-                                }
+                                this.message_list.update(cx, |list, cx| {
+                                    list.set_streaming_error(&err, cx);
+                                });
                                 this.finish_generating(cx);
                             });
                         });
@@ -348,15 +368,26 @@ impl ChatView {
         self.message_input.update(cx, |input, cx| {
             input.set_loading(false, cx);
         });
+        // 取消防抖任务
+        self.debounce_task = None;
+        self.pending_ui_update = false;
+        cx.notify();
+    }
+
+    fn finish_generating_with_content(&mut self, content: String, cx: &mut Context<Self>) {
+        self.is_generating = false;
+        self.message_input.update(cx, |input, cx| {
+            input.set_loading(false, cx);
+        });
+
+        // 取消防抖任务
+        self.debounce_task = None;
+        self.pending_ui_update = false;
 
         // Save assistant message to database
-        if let Some(msg) = self.messages.last() {
-            if msg.role == Role::Assistant {
-                self.save_message_to_db(msg.id, Role::Assistant, msg.content.clone(), cx);
-            }
-        }
+        self.save_message_to_db(Uuid::new_v4(), Role::Assistant, content, cx);
 
-        self.update_message_list(cx);
+        cx.notify();
     }
 
     /// Reload LLM provider from settings (called when provider/model changes)
@@ -402,6 +433,34 @@ impl ChatView {
             list.set_messages(messages, cx);
         });
         cx.notify();
+    }
+
+    /// 防抖通知 - 流式消息时使用，避免每个 token 都触发重渲染
+    fn schedule_debounced_update(&mut self, cx: &mut Context<Self>) {
+        self.pending_ui_update = true;
+
+        // 如果已经有防抖任务在运行，不需要再创建新的
+        if self.debounce_task.is_some() {
+            return;
+        }
+
+        self.debounce_task = Some(cx.spawn(async move |this, cx| {
+            // 等待防抖间隔
+            cx.background_executor()
+                .timer(Duration::from_millis(STREAM_DEBOUNCE_MS))
+                .await;
+
+            let _ = cx.update(|app| {
+                let _ = this.update(app, |this, cx| {
+                    if this.pending_ui_update {
+                        this.pending_ui_update = false;
+                        // 只通知刷新，不需要重新设置消息列表
+                        cx.notify();
+                    }
+                    this.debounce_task = None;
+                });
+            });
+        }));
     }
 }
 
