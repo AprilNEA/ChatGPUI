@@ -8,7 +8,7 @@ use std::future::Future;
 use std::sync::Arc;
 
 use gpui::*;
-use gpui_component::{h_flex, scroll::ScrollableElement, v_flex, ActiveTheme};
+use gpui_component::{h_flex, v_flex, ActiveTheme};
 
 use crate::parser::{MarkdownElement, MarkdownParser};
 
@@ -235,6 +235,10 @@ impl RenderContext {
     fn code_block_cache_key(&self, index: usize) -> ElementId {
         ElementId::from((self.cache_key.clone(), format!("code-block-{}", index)))
     }
+
+    fn code_block_scroll_id(&self, index: usize) -> ElementId {
+        ElementId::from((self.cache_key.clone(), format!("code-block-scroll-{}", index)))
+    }
 }
 
 /// Render plain code without syntax highlighting, splitting by lines to avoid extra spacing
@@ -243,9 +247,15 @@ fn render_plain_code(code: &str) -> AnyElement {
     let code = code.trim_end_matches('\n');
     let lines: Vec<AnyElement> = code
         .lines()
-        .map(|line| div().child(line.to_string()).into_any_element())
+        .map(|line| {
+            div()
+                .whitespace_nowrap()
+                .flex_shrink_0()
+                .child(line.to_string())
+                .into_any_element()
+        })
         .collect();
-    v_flex().children(lines).into_any_element()
+    v_flex().flex_shrink_0().children(lines).into_any_element()
 }
 
 fn render_element(
@@ -330,7 +340,8 @@ fn render_element(
                 .p_3()
                 .text_sm()
                 .font_family("monospace")
-                .overflow_x_scrollbar()
+                .id(context.code_block_scroll_id(code_block_index))
+                .overflow_x_scroll()
                 .overflow_y_hidden();
 
             if let Some(lang) = lang_label {
