@@ -70,7 +70,7 @@ impl EventEmitter<BackgroundStreamFinishedEvent> for ChatView {}
 
 impl ChatView {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let message_list = cx.new(|cx| MessageList::new(cx));
+        let message_list = cx.new(MessageList::new);
         let message_input = cx.new(|cx| MessageInput::new(window, cx));
 
         // Try to create LLM provider from settings
@@ -80,7 +80,10 @@ impl ChatView {
                 (Some(provider), model_id)
             }
             Err(e) => {
-                tracing::warn!("No LLM provider configured: {}. Please set up in Settings.", e);
+                tracing::warn!(
+                    "No LLM provider configured: {}. Please set up in Settings.",
+                    e
+                );
                 (None, String::new())
             }
         };
@@ -98,8 +101,7 @@ impl ChatView {
             },
         );
 
-        let mut messages = Vec::new();
-        messages.push(Arc::new(Message::system("You are a helpful assistant.")));
+        let messages = vec![Arc::new(Message::system("You are a helpful assistant."))];
 
         Self {
             messages,
@@ -125,6 +127,8 @@ impl ChatView {
         self.current_conversation_id = None;
         self.clear_streaming_ui_buffer();
         self.update_message_list(cx);
+        self.message_list
+            .update(cx, |list, _cx| list.force_scroll_to_bottom());
     }
 
     /// Load an existing conversation
@@ -174,9 +178,7 @@ impl ChatView {
 
                 let _ = tx.send(Ok(messages_with_attachments)).await;
             } else {
-                let _ = tx
-                    .send(Err(messages_result.unwrap_err()))
-                    .await;
+                let _ = tx.send(Err(messages_result.unwrap_err())).await;
             }
         })
         .detach();
@@ -209,6 +211,8 @@ impl ChatView {
                             }));
                         }
                         this.update_message_list(cx);
+                        this.message_list
+                            .update(cx, |list, _cx| list.force_scroll_to_bottom());
                     });
                 });
             }
@@ -346,7 +350,9 @@ impl ChatView {
                     let extension = storage::extension_from_mime(&att.mime_type);
                     let file_size = att.data.len() as i64;
 
-                    if let Ok(file_path) = storage::save_attachment(att.id, &att.data, extension).await {
+                    if let Ok(file_path) =
+                        storage::save_attachment(att.id, &att.data, extension).await
+                    {
                         let _ = db
                             .create_attachment(
                                 att.id,
@@ -373,10 +379,10 @@ impl ChatView {
                         if this.current_conversation_id.is_none() {
                             this.current_conversation_id = Some(conversation_id);
                         }
-                        if let Some(stream) = this.active_stream.as_mut() {
-                            if stream.conversation_id.is_none() {
-                                stream.conversation_id = Some(conversation_id);
-                            }
+                        if let Some(stream) = this.active_stream.as_mut()
+                            && stream.conversation_id.is_none()
+                        {
+                            stream.conversation_id = Some(conversation_id);
                         }
                         this.finalize_pending_stream(conversation_id, cx);
                         cx.emit(ConversationUpdatedEvent { conversation_id });
@@ -431,11 +437,11 @@ impl ChatView {
 
     fn generate_response(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
         // Try to reload provider if not available (user may have configured it)
-        if self.llm_provider.is_none() {
-            if let Ok(provider) = llm::create_provider_from_settings(cx) {
-                self.current_model_id = provider.default_model().id.clone();
-                self.llm_provider = Some(provider);
-            }
+        if self.llm_provider.is_none()
+            && let Ok(provider) = llm::create_provider_from_settings(cx)
+        {
+            self.current_model_id = provider.default_model().id.clone();
+            self.llm_provider = Some(provider);
         }
 
         let Some(provider) = self.llm_provider.clone() else {
@@ -670,13 +676,7 @@ impl ChatView {
         let is_current = self.is_current_conversation(conversation_id);
 
         if let Some(conversation_id) = conversation_id {
-            self.complete_stream_result(
-                conversation_id,
-                message_id,
-                content,
-                error,
-                cx,
-            );
+            self.complete_stream_result(conversation_id, message_id, content, error, cx);
             return;
         }
 

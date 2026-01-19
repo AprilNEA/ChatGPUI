@@ -4,13 +4,14 @@
 
 use std::time::Duration;
 
-use gpui::*;
 use gpui::prelude::FluentBuilder;
+use gpui::*;
 use gpui_component::{
     ActiveTheme, IconName,
     button::{Button, ButtonVariants},
-    h_flex, v_flex,
+    h_flex,
     notification::{Notification, NotificationList, NotificationType},
+    v_flex,
 };
 use gpui_tokio_bridge::Tokio;
 
@@ -62,7 +63,7 @@ impl ChatApp {
         .detach();
 
         let sidebar = cx.new(|cx| ChatSidebar::new(window, cx));
-        let model_selector = cx.new(|cx| ModelSelector::new(cx));
+        let model_selector = cx.new(ModelSelector::new);
         let chat_view = cx.new(|cx| ChatView::new(window, cx));
         let notification_list = cx.new(|cx| NotificationList::new(window, cx));
 
@@ -210,7 +211,7 @@ impl Render for ChatApp {
             .child(
                 h_flex()
                     .absolute()
-                    .top(px(6.))
+                    .top(px(8.))
                     .left(px(80.)) // After traffic lights
                     .gap_0()
                     .child(

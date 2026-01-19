@@ -37,6 +37,7 @@ impl ReasoningLevel {
         }
     }
 
+    #[allow(dead_code)]
     pub fn icon(&self) -> IconName {
         match self {
             ReasoningLevel::Off => IconName::CircleX,
@@ -60,6 +61,7 @@ pub struct MessageInput {
     mcp_enabled: bool,
 }
 
+#[allow(dead_code)]
 pub struct SubmitEvent {
     pub content: String,
     pub attachments: Vec<Attachment>,

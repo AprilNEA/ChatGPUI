@@ -6,12 +6,7 @@ use gpui::{
     App, AppContext, Bounds, Context, IntoElement, ParentElement, Render, Styled, TitlebarOptions,
     Window, WindowBounds, WindowKind, WindowOptions, actions, px, size,
 };
-use gpui_component::{
-    ActiveTheme, Root,
-    h_flex,
-    label::Label,
-    v_flex,
-};
+use gpui_component::{ActiveTheme, Root, h_flex, label::Label, v_flex};
 
 #[cfg(not(debug_assertions))]
 shadow_rs::shadow!(build);
@@ -50,10 +45,7 @@ impl Render for AboutView {
                     .size(px(80.))
                     .items_center()
                     .justify_center()
-                    .child(
-                        gpui::img("icons/chatgpui.png")
-                            .size(px(80.)),
-                    ),
+                    .child(gpui::img("icons/chatgpui.png").size(px(80.))),
             )
             // App name
             .child(
@@ -73,14 +65,22 @@ impl Render for AboutView {
                     .gap_1()
                     .items_center()
                     .child(
-                        Label::new(format!("{}: {}", t!("about.commit"), &build::SHORT_COMMIT[..7.min(build::SHORT_COMMIT.len())]))
-                            .text_xs()
-                            .text_color(theme.muted_foreground),
+                        Label::new(format!(
+                            "{}: {}",
+                            t!("about.commit"),
+                            &build::SHORT_COMMIT[..7.min(build::SHORT_COMMIT.len())]
+                        ))
+                        .text_xs()
+                        .text_color(theme.muted_foreground),
                     )
                     .child(
-                        Label::new(format!("{}: {}", t!("about.build_time"), build::BUILD_TIME_3339))
-                            .text_xs()
-                            .text_color(theme.muted_foreground),
+                        Label::new(format!(
+                            "{}: {}",
+                            t!("about.build_time"),
+                            build::BUILD_TIME_3339
+                        ))
+                        .text_xs()
+                        .text_color(theme.muted_foreground),
                     ),
             )
             // Copyright

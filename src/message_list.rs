@@ -48,19 +48,11 @@ const SCROLL_CHANGE_EPSILON: f32 = 1.0;
 const REMEASURE_INTERVAL_MS: u64 = 250;
 
 fn max_pixels(a: Pixels, b: Pixels) -> Pixels {
-    if f32::from(a) >= f32::from(b) {
-        a
-    } else {
-        b
-    }
+    if f32::from(a) >= f32::from(b) { a } else { b }
 }
 
 fn min_pixels(a: Pixels, b: Pixels) -> Pixels {
-    if f32::from(a) <= f32::from(b) {
-        a
-    } else {
-        b
-    }
+    if f32::from(a) <= f32::from(b) { a } else { b }
 }
 
 fn pixels_changed(a: Pixels, b: Pixels) -> bool {
@@ -241,6 +233,14 @@ impl MessageList {
         cx.notify();
     }
 
+    /// Force the list to scroll to the bottom on the next render.
+    pub fn force_scroll_to_bottom(&mut self) {
+        self.pending_scroll_to_bottom = true;
+        self.stick_to_bottom = true;
+        self.last_scroll_offset = Pixels::ZERO;
+        self.last_max_offset = Pixels::ZERO;
+    }
+
     fn is_near_bottom(&self) -> bool {
         let max_offset = self.scroll_handle.max_offset().height;
         if max_offset <= Pixels::ZERO {
@@ -264,11 +264,8 @@ impl MessageList {
         if list_width <= Pixels::ZERO {
             return;
         }
-        let content_width = max_pixels(
-            px(1.),
-            list_width - LIST_HORIZONTAL_PADDING * 2,
-        );
-        let width_changed = self.content_width.map_or(true, |prev| {
+        let content_width = max_pixels(px(1.), list_width - LIST_HORIZONTAL_PADDING * 2);
+        let width_changed = self.content_width.is_none_or(|prev| {
             (f32::from(prev) - f32::from(content_width)).abs() > WIDTH_CHANGE_EPSILON
         });
         if width_changed {
@@ -276,9 +273,8 @@ impl MessageList {
             self.content_width = Some(content_width);
             // Only invalidate measurements for significant width changes (not animation)
             // Small changes during animation can use existing measurements
-            let significant_change = old_width.map_or(true, |prev| {
-                (f32::from(prev) - f32::from(content_width)).abs() > 100.0
-            });
+            let significant_change = old_width
+                .is_none_or(|prev| (f32::from(prev) - f32::from(content_width)).abs() > 100.0);
             if significant_change {
                 for entry in self.size_cache.values_mut() {
                     entry.measured = false;
@@ -300,9 +296,8 @@ impl MessageList {
 
         if !auto_scroll {
             self.stick_to_bottom = false;
-        } else if self.pending_scroll_to_bottom {
-            self.stick_to_bottom = true;
-        } else if content_size_changed && self.was_near_bottom() {
+        } else if self.pending_scroll_to_bottom || (content_size_changed && self.was_near_bottom())
+        {
             self.stick_to_bottom = true;
         } else if self.stick_to_bottom {
             if user_scrolled_up {
@@ -465,7 +460,7 @@ impl MessageList {
             let should_remeasure = if metrics.force_remeasure {
                 entry
                     .last_measured_at
-                    .map_or(true, |at| at.elapsed() >= Duration::from_millis(REMEASURE_INTERVAL_MS))
+                    .is_none_or(|at| at.elapsed() >= Duration::from_millis(REMEASURE_INTERVAL_MS))
             } else {
                 false
             };
@@ -631,8 +626,8 @@ impl MessageItem {
         let status = self.status();
         let content = self.content_str();
         let hash = layout_hash(role, status, content);
-        let force_remeasure = role == Role::Assistant
-            && (content.contains("```") || content.contains("~~~"));
+        let force_remeasure =
+            role == Role::Assistant && (content.contains("```") || content.contains("~~~"));
         let estimated_height = estimate_item_height(role, status, content, content_width);
         let is_streaming = matches!(status, MessageStatus::Streaming);
         LayoutMetrics {
@@ -726,7 +721,7 @@ fn estimate_text_height(content: &str, width: Pixels) -> Pixels {
         } else {
             // Regular text - estimate wrapping
             let len = line.chars().count().max(1);
-            let needed = (len + chars_per_line - 1) / chars_per_line;
+            let needed = len.div_ceil(chars_per_line);
             total_height += ESTIMATED_TEXT_LINE_HEIGHT * needed.max(1);
         }
     }

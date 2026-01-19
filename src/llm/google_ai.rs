@@ -206,7 +206,10 @@ impl GoogleAIProvider {
 
     /// Find a model by ID
     pub fn find_model(&self, model_id: &str) -> Option<Model> {
-        self.static_models.iter().find(|m| m.id == model_id).cloned()
+        self.static_models
+            .iter()
+            .find(|m| m.id == model_id)
+            .cloned()
     }
 }
 
@@ -266,15 +269,16 @@ impl LlmProvider for GoogleAIProvider {
         );
 
         // Extract system message if present
-        let system_instruction = messages
-            .iter()
-            .find(|m| m.role == Role::System)
-            .map(|m| GoogleAIContent {
-                role: "user".to_string(), // Google uses "user" role for system instructions
-                parts: vec![GoogleAIPart::Text {
-                    text: m.content.clone(),
-                }],
-            });
+        let system_instruction =
+            messages
+                .iter()
+                .find(|m| m.role == Role::System)
+                .map(|m| GoogleAIContent {
+                    role: "user".to_string(), // Google uses "user" role for system instructions
+                    parts: vec![GoogleAIPart::Text {
+                        text: m.content.clone(),
+                    }],
+                });
 
         // Convert messages to Google AI format (excluding system)
         let contents: Vec<GoogleAIContent> = messages
@@ -361,28 +365,27 @@ impl LlmProvider for GoogleAIProvider {
             let text = String::from_utf8_lossy(&chunk);
 
             for line in text.lines() {
-                if line.starts_with("data: ") {
-                    let data = &line[6..];
+                if let Some(data) = line.strip_prefix("data: ") {
                     if data.trim().is_empty() {
                         continue;
                     }
 
-                    if let Ok(response) = serde_json::from_str::<GoogleAIStreamResponse>(data) {
-                        if let Some(candidates) = response.candidates {
-                            for candidate in candidates {
-                                if let Some(content) = candidate.content {
-                                    for part in content.parts {
-                                        if let GoogleAIPart::Text { text } = part {
-                                            if !text.is_empty() {
-                                                tx.send(StreamEvent::Delta(text)).await.ok();
-                                            }
-                                        }
+                    if let Ok(response) = serde_json::from_str::<GoogleAIStreamResponse>(data)
+                        && let Some(candidates) = response.candidates
+                    {
+                        for candidate in candidates {
+                            if let Some(content) = candidate.content {
+                                for part in content.parts {
+                                    if let GoogleAIPart::Text { text } = part
+                                        && !text.is_empty()
+                                    {
+                                        tx.send(StreamEvent::Delta(text)).await.ok();
                                     }
                                 }
-                                if candidate.finish_reason.is_some() {
-                                    tx.send(StreamEvent::Done).await.ok();
-                                    return Ok(());
-                                }
+                            }
+                            if candidate.finish_reason.is_some() {
+                                tx.send(StreamEvent::Done).await.ok();
+                                return Ok(());
                             }
                         }
                     }

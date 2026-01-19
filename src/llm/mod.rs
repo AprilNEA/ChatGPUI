@@ -18,9 +18,9 @@ pub use provider::{LlmProvider, ProviderConfig, StreamEvent};
 
 use std::sync::Arc;
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 
-use crate::settings::{get_settings, Provider as SettingsProvider};
+use crate::settings::{Provider as SettingsProvider, get_settings};
 
 /// Create an LLM provider from application settings
 pub fn create_provider_from_settings(cx: &gpui::App) -> Result<Arc<dyn LlmProvider>> {
@@ -46,10 +46,7 @@ pub fn create_provider(provider: &SettingsProvider) -> Result<Arc<dyn LlmProvide
         "google_ai" => Ok(Arc::new(GoogleAIProvider::new(config))),
         // Future providers can be added here:
         // "deepseek" => Ok(Arc::new(DeepSeekProvider::new(config))),
-        _ => Err(anyhow!(
-            "Provider '{}' is not yet implemented",
-            provider.id
-        )),
+        _ => Err(anyhow!("Provider '{}' is not yet implemented", provider.id)),
     }
 }
 

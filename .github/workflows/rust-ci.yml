@@ -43,6 +43,8 @@ jobs:
             mold
 
       - name: Check workspace
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: cargo check
 
   fmt:
@@ -88,6 +90,8 @@ jobs:
         run: rustup component add clippy
 
       - name: Run clippy
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: cargo clippy --all-targets
 
   # test:
@@ -128,4 +132,6 @@ jobs:
             mold
 
       - name: Build workspace
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: cargo build

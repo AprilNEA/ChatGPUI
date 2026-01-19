@@ -8,7 +8,7 @@ use std::future::Future;
 use std::sync::Arc;
 
 use gpui::*;
-use gpui_component::{h_flex, v_flex, ActiveTheme};
+use gpui_component::{ActiveTheme, h_flex, v_flex};
 
 use crate::parser::{MarkdownElement, MarkdownParser};
 
@@ -17,6 +17,7 @@ use crate::syntax::SyntaxHighlighter;
 
 struct MarkdownParseAsset;
 
+#[allow(clippy::manual_async_fn)]
 impl Asset for MarkdownParseAsset {
     type Source = SharedString;
     type Output = Arc<Vec<MarkdownElement>>;
@@ -167,7 +168,7 @@ impl RenderOnce for Markdown {
                     .read(cx)
                     .elements
                     .as_ref()
-                    .map_or(true, |cached| !Arc::ptr_eq(cached, &elements));
+                    .is_none_or(|cached| !Arc::ptr_eq(cached, &elements));
                 if should_update {
                     cache.update(cx, |state, _| {
                         state.elements = Some(elements.clone());
@@ -239,7 +240,10 @@ impl RenderContext {
     }
 
     fn code_block_scroll_id(&self, index: usize) -> ElementId {
-        ElementId::from((self.cache_key.clone(), format!("code-block-scroll-{}", index)))
+        ElementId::from((
+            self.cache_key.clone(),
+            format!("code-block-scroll-{}", index),
+        ))
     }
 
     fn code_block_copy_id(&self, index: usize) -> ElementId {
@@ -354,12 +358,8 @@ fn render_element(
 
             let mut header_left = h_flex().items_center().gap_2();
             if let Some(path) = icon_path {
-                header_left = header_left.child(
-                    svg()
-                        .path(path)
-                        .size_4()
-                        .text_color(style.muted_foreground),
-                );
+                header_left =
+                    header_left.child(svg().path(path).size_4().text_color(style.muted_foreground));
             }
             header_left = header_left.child(
                 div()
@@ -420,7 +420,7 @@ fn render_element(
 
         MarkdownElement::Blockquote(content) => {
             let children: Vec<AnyElement> = content
-                .into_iter()
+                .iter()
                 .map(|el| {
                     render_element(
                         el,
@@ -445,10 +445,10 @@ fn render_element(
 
         MarkdownElement::UnorderedList(items) => {
             let list_items: Vec<AnyElement> = items
-                .into_iter()
+                .iter()
                 .map(|item| {
                     let item_children: Vec<AnyElement> = item
-                        .into_iter()
+                        .iter()
                         .map(|el| {
                             render_element(
                                 el,
@@ -481,11 +481,11 @@ fn render_element(
 
         MarkdownElement::OrderedList { start, items } => {
             let list_items: Vec<AnyElement> = items
-                .into_iter()
+                .iter()
                 .enumerate()
                 .map(|(i, item)| {
                     let item_children: Vec<AnyElement> = item
-                        .into_iter()
+                        .iter()
                         .map(|el| {
                             render_element(
                                 el,
@@ -518,7 +518,7 @@ fn render_element(
 
         MarkdownElement::ListItem(content) => {
             let children: Vec<AnyElement> = content
-                .into_iter()
+                .iter()
                 .map(|el| {
                     render_element(
                         el,
@@ -655,7 +655,7 @@ fn render_inline_children(
     cx: &mut App,
 ) -> Vec<AnyElement> {
     elements
-        .into_iter()
+        .iter()
         .map(|el| {
             render_element(
                 el,

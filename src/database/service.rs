@@ -11,9 +11,9 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
-use entity::{attachment, conversation, message};
 use super::manager::DatabaseManager;
 use super::repository::{AttachmentRepository, ConversationRepository, MessageRepository};
+use entity::{attachment, conversation, message};
 
 /// Global database service accessible from GPUI context
 #[derive(Clone)]
@@ -152,6 +152,7 @@ impl DatabaseService {
     // ============ Attachment Methods ============
 
     /// Create a new attachment record
+    #[allow(clippy::too_many_arguments)]
     pub async fn create_attachment(
         &self,
         id: Uuid,
@@ -213,10 +214,10 @@ impl DatabaseService {
                 *connection.write().await = None;
 
                 // Then shutdown manager
-                if let Some(mut mgr) = manager.write().await.take() {
-                    if let Err(e) = mgr.shutdown().await {
-                        tracing::error!("Failed to shutdown database: {}", e);
-                    }
+                if let Some(mut mgr) = manager.write().await.take()
+                    && let Err(e) = mgr.shutdown().await
+                {
+                    tracing::error!("Failed to shutdown database: {}", e);
                 }
             });
             tracing::info!("Database shutdown complete (sync)");

@@ -133,16 +133,11 @@ impl OpenAIProvider {
             .data
             .into_iter()
             .filter(|m| {
-                m.id.starts_with("gpt-")
-                    || m.id.starts_with("o1")
-                    || m.id.starts_with("o3")
+                m.id.starts_with("gpt-") || m.id.starts_with("o1") || m.id.starts_with("o3")
             })
             .map(|api_model| {
                 // Try to match with our static models to get additional metadata
-                let static_model = self
-                    .static_models
-                    .iter()
-                    .find(|m| m.id == api_model.id);
+                let static_model = self.static_models.iter().find(|m| m.id == api_model.id);
 
                 if let Some(sm) = static_model {
                     sm.clone()
@@ -211,7 +206,10 @@ impl OpenAIProvider {
 
     /// Find a model by ID
     pub fn find_model(&self, model_id: &str) -> Option<Model> {
-        self.static_models.iter().find(|m| m.id == model_id).cloned()
+        self.static_models
+            .iter()
+            .find(|m| m.id == model_id)
+            .cloned()
     }
 }
 
@@ -305,9 +303,7 @@ impl LlmProvider for OpenAIProvider {
             .collect();
 
         // Get max tokens from model or use default
-        let max_tokens = self
-            .find_model(model_id)
-            .and_then(|m| m.max_output_tokens);
+        let max_tokens = self.find_model(model_id).and_then(|m| m.max_output_tokens);
 
         let request = OpenAIRequest {
             model: model_id.to_string(),
@@ -328,7 +324,11 @@ impl LlmProvider for OpenAIProvider {
         } else {
             format!("(too short, len={})", key_len)
         };
-        tracing::debug!("Making OpenAI API request to {} with key: {}", url, key_preview);
+        tracing::debug!(
+            "Making OpenAI API request to {} with key: {}",
+            url,
+            key_preview
+        );
 
         let response = self
             .client
@@ -354,8 +354,7 @@ impl LlmProvider for OpenAIProvider {
             let text = String::from_utf8_lossy(&chunk);
 
             for line in text.lines() {
-                if line.starts_with("data: ") {
-                    let data = &line[6..];
+                if let Some(data) = line.strip_prefix("data: ") {
                     if data.trim() == "[DONE]" {
                         tx.send(StreamEvent::Done).await.ok();
                         return Ok(());
@@ -367,10 +366,10 @@ impl LlmProvider for OpenAIProvider {
 
                     if let Ok(chunk) = serde_json::from_str::<OpenAIStreamChunk>(data) {
                         for choice in chunk.choices {
-                            if let Some(content) = choice.delta.content {
-                                if !content.is_empty() {
-                                    tx.send(StreamEvent::Delta(content)).await.ok();
-                                }
+                            if let Some(content) = choice.delta.content
+                                && !content.is_empty()
+                            {
+                                tx.send(StreamEvent::Delta(content)).await.ok();
                             }
                             if choice.finish_reason.is_some() {
                                 tx.send(StreamEvent::Done).await.ok();

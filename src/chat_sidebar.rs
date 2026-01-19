@@ -7,13 +7,13 @@ use std::rc::Rc;
 
 use gpui::*;
 use gpui_component::{
-    ActiveTheme, Icon, IconName, Theme, ThemeMode, VirtualListScrollHandle, v_virtual_list,
+    ActiveTheme, Icon, IconName, Theme, ThemeMode, VirtualListScrollHandle,
     button::{Button, ButtonVariants},
     h_flex,
     input::{Input, InputState},
     label::Label,
     list::ListItem,
-    v_flex,
+    v_flex, v_virtual_list,
 };
 
 use crate::settings::OpenSettings;
@@ -141,7 +141,9 @@ impl ChatSidebar {
         }
 
         if !yesterday_items.is_empty() {
-            flat_items.push(ListItemKind::GroupHeader(t!("sidebar.yesterday").to_string()));
+            flat_items.push(ListItemKind::GroupHeader(
+                t!("sidebar.yesterday").to_string(),
+            ));
             sizes.push(size(px(260.), px(GROUP_HEADER_HEIGHT)));
             for item in yesterday_items {
                 flat_items.push(item);
@@ -254,16 +256,11 @@ impl ChatSidebar {
                                         .w_full()
                                         .h(px(GROUP_HEADER_HEIGHT))
                                         .child(
-                                            h_flex()
-                                                .w_full()
-                                                .h_full()
-                                                .px_3()
-                                                .items_center()
-                                                .child(
-                                                    Label::new(name.clone())
-                                                        .text_xs()
-                                                        .text_color(theme.muted_foreground),
-                                                ),
+                                            h_flex().w_full().h_full().px_3().items_center().child(
+                                                Label::new(name.clone())
+                                                    .text_xs()
+                                                    .text_color(theme.muted_foreground),
+                                            ),
                                         )
                                         .into_any_element(),
                                     ListItemKind::Conversation {

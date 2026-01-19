@@ -33,7 +33,10 @@ use crate::assets::Assets;
 use about::{OpenAbout, open_about_window};
 use settings::{OpenSettings, open_settings_window};
 
-actions!(app, [Quit]);
+actions!(
+    app,
+    [Quit, NewChat, Undo, Redo, Cut, Copy, Paste, SelectAll]
+);
 
 /// Set the application dock icon on macOS.
 /// This is needed for `cargo run` since there's no app bundle with Info.plist.
@@ -110,11 +113,7 @@ fn main() {
         // Load themes from themes directory
         let theme_name = SharedString::from("macOS Classic Dark");
         if let Err(err) = ThemeRegistry::watch_dir(PathBuf::from("./themes"), cx, move |cx| {
-            if let Some(theme) = ThemeRegistry::global(cx)
-                .themes()
-                .get(&theme_name)
-                .cloned()
-            {
+            if let Some(theme) = ThemeRegistry::global(cx).themes().get(&theme_name).cloned() {
                 Theme::global_mut(cx).apply_config(&theme);
             }
         }) {
@@ -135,19 +134,55 @@ fn main() {
         cx.bind_keys([
             KeyBinding::new("cmd-q", Quit, None),
             KeyBinding::new("cmd-,", OpenSettings, None),
+            KeyBinding::new("cmd-n", NewChat, None),
         ]);
 
         // Set up menu bar
-        cx.set_menus(vec![Menu {
-            name: t!("app.name").to_string().into(),
-            items: vec![
-                MenuItem::action(t!("app.about").to_string(), OpenAbout),
-                MenuItem::separator(),
-                MenuItem::action(t!("app.settings").to_string(), OpenSettings),
-                MenuItem::separator(),
-                MenuItem::action(t!("app.quit").to_string(), Quit),
-            ],
-        }]);
+        cx.set_menus(vec![
+            // Application menu (macOS)
+            Menu {
+                name: t!("app.name").to_string().into(),
+                items: vec![
+                    MenuItem::action(t!("menu.about").to_string(), OpenAbout),
+                    MenuItem::separator(),
+                    MenuItem::action(t!("menu.settings").to_string(), OpenSettings),
+                    MenuItem::separator(),
+                    MenuItem::os_submenu(t!("menu.services").to_string(), SystemMenuType::Services),
+                    MenuItem::separator(),
+                    MenuItem::action(t!("menu.quit").to_string(), Quit),
+                ],
+            },
+            // File menu
+            Menu {
+                name: t!("menu.file").to_string().into(),
+                items: vec![MenuItem::action(t!("menu.new_chat").to_string(), NewChat)],
+            },
+            // Edit menu
+            Menu {
+                name: t!("menu.edit").to_string().into(),
+                items: vec![
+                    MenuItem::os_action(t!("menu.undo").to_string(), Undo, OsAction::Undo),
+                    MenuItem::os_action(t!("menu.redo").to_string(), Redo, OsAction::Redo),
+                    MenuItem::separator(),
+                    MenuItem::os_action(t!("menu.cut").to_string(), Cut, OsAction::Cut),
+                    MenuItem::os_action(t!("menu.copy").to_string(), Copy, OsAction::Copy),
+                    MenuItem::os_action(t!("menu.paste").to_string(), Paste, OsAction::Paste),
+                    MenuItem::os_action(
+                        t!("menu.select_all").to_string(),
+                        SelectAll,
+                        OsAction::SelectAll,
+                    ),
+                ],
+            },
+            // Help menu
+            Menu {
+                name: t!("menu.help").to_string().into(),
+                items: vec![MenuItem::action(
+                    t!("menu.documentation").to_string(),
+                    OpenAbout,
+                )],
+            },
+        ]);
 
         cx.spawn(async move |cx| {
             cx.update(|cx| {

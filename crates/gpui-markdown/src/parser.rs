@@ -78,28 +78,16 @@ enum OwnedEvent {
 #[derive(Debug, Clone)]
 enum OwnedTag {
     Paragraph,
-    Heading {
-        level: HeadingLevel,
-    },
+    Heading { level: HeadingLevel },
     Strong,
     Emphasis,
     Strikethrough,
     BlockQuote,
-    CodeBlock {
-        language: Option<String>,
-    },
-    List {
-        start: Option<u64>,
-    },
+    CodeBlock { language: Option<String> },
+    List { start: Option<u64> },
     Item,
-    Link {
-        dest_url: String,
-        title: String,
-    },
-    Image {
-        dest_url: String,
-        title: String,
-    },
+    Link { dest_url: String, title: String },
+    Image { dest_url: String, title: String },
     Other,
 }
 
@@ -107,7 +95,7 @@ impl OwnedEvent {
     fn from_event(event: &Event) -> Self {
         match event {
             Event::Start(tag) => OwnedEvent::Start(OwnedTag::from_tag(tag)),
-            Event::End(tag) => OwnedEvent::End(tag.clone()),
+            Event::End(tag) => OwnedEvent::End(*tag),
             Event::Text(text) => OwnedEvent::Text(text.to_string()),
             Event::Code(code) => OwnedEvent::Code(code.to_string()),
             Event::SoftBreak => OwnedEvent::SoftBreak,
@@ -136,11 +124,15 @@ impl OwnedTag {
             }
             Tag::List(start) => OwnedTag::List { start: *start },
             Tag::Item => OwnedTag::Item,
-            Tag::Link { dest_url, title, .. } => OwnedTag::Link {
+            Tag::Link {
+                dest_url, title, ..
+            } => OwnedTag::Link {
                 dest_url: dest_url.to_string(),
                 title: title.to_string(),
             },
-            Tag::Image { dest_url, title, .. } => OwnedTag::Image {
+            Tag::Image {
+                dest_url, title, ..
+            } => OwnedTag::Image {
                 dest_url: dest_url.to_string(),
                 title: title.to_string(),
             },
@@ -333,14 +325,13 @@ impl MarkdownParser {
         let mut index = 0;
 
         while index < events.len() {
-            if let OwnedEvent::Start(OwnedTag::Item) = &events[index] {
-                if let Some((inner, consumed)) =
+            if let OwnedEvent::Start(OwnedTag::Item) = &events[index]
+                && let Some((inner, consumed)) =
                     self.collect_until_end(&events[index..], &TagEnd::Item, &OwnedTag::Item)
-                {
-                    items.push(self.events_to_elements(&inner));
-                    index += consumed;
-                    continue;
-                }
+            {
+                items.push(self.events_to_elements(&inner));
+                index += consumed;
+                continue;
             }
             index += 1;
         }

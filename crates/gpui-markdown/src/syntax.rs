@@ -33,6 +33,7 @@ struct HighlightSource {
 
 struct HighlightAsset;
 
+#[allow(clippy::manual_async_fn)]
 impl Asset for HighlightAsset {
     type Source = HighlightSource;
     type Output = Arc<HighlightedLines>;
@@ -107,7 +108,7 @@ impl SyntaxHighlighter {
                     .read(cx)
                     .lines
                     .as_ref()
-                    .map_or(true, |cached| !Arc::ptr_eq(cached, &cached_lines));
+                    .is_none_or(|cached| !Arc::ptr_eq(cached, &cached_lines));
                 if should_update {
                     cache.update(cx, |state, _| {
                         state.lines = Some(cached_lines.clone());
@@ -221,7 +222,12 @@ fn highlight_code(source: &HighlightSource) -> HighlightedLines {
                         let is_italic = style
                             .font_style
                             .contains(syntect::highlighting::FontStyle::ITALIC);
-                        (color, text.trim_end_matches('\n').to_string(), is_bold, is_italic)
+                        (
+                            color,
+                            text.trim_end_matches('\n').to_string(),
+                            is_bold,
+                            is_italic,
+                        )
                     })
                     .collect();
                 cached_lines.push(line_data);

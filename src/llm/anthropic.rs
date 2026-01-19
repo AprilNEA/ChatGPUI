@@ -159,10 +159,7 @@ impl AnthropicProvider {
             .filter(|m| m.model_type == "model") // Filter to actual models
             .map(|api_model| {
                 // Try to match with our static models to get additional metadata
-                let static_model = self
-                    .static_models
-                    .iter()
-                    .find(|m| m.id == api_model.id);
+                let static_model = self.static_models.iter().find(|m| m.id == api_model.id);
 
                 if let Some(sm) = static_model {
                     // Use static model data with API display name
@@ -245,7 +242,10 @@ impl AnthropicProvider {
     pub fn find_model(&self, model_id: &str) -> Option<Model> {
         // First check cached models, then fallback to static
         // Note: This is sync, so we can't use async here
-        self.static_models.iter().find(|m| m.id == model_id).cloned()
+        self.static_models
+            .iter()
+            .find(|m| m.id == model_id)
+            .cloned()
     }
 }
 
@@ -400,8 +400,7 @@ impl LlmProvider for AnthropicProvider {
             let text = String::from_utf8_lossy(&chunk);
 
             for line in text.lines() {
-                if line.starts_with("data: ") {
-                    let data = &line[6..];
+                if let Some(data) = line.strip_prefix("data: ") {
                     if data.trim().is_empty() {
                         continue;
                     }
@@ -411,12 +410,11 @@ impl LlmProvider for AnthropicProvider {
                     if let Ok(event) = serde_json::from_str::<AnthropicStreamEvent>(data) {
                         match event.event_type.as_str() {
                             "content_block_delta" => {
-                                if let Some(delta) = event.delta {
-                                    if let Some(text) = delta.text {
-                                        if !text.is_empty() {
-                                            tx.send(StreamEvent::Delta(text)).await.ok();
-                                        }
-                                    }
+                                if let Some(delta) = event.delta
+                                    && let Some(text) = delta.text
+                                    && !text.is_empty()
+                                {
+                                    tx.send(StreamEvent::Delta(text)).await.ok();
                                 }
                             }
                             "message_stop" => {
@@ -424,11 +422,9 @@ impl LlmProvider for AnthropicProvider {
                                 return Ok(());
                             }
                             "error" => {
-                                tx.send(StreamEvent::Error(
-                                    t!("error.stream_error").to_string(),
-                                ))
-                                .await
-                                .ok();
+                                tx.send(StreamEvent::Error(t!("error.stream_error").to_string()))
+                                    .await
+                                    .ok();
                                 return Ok(());
                             }
                             _ => {}

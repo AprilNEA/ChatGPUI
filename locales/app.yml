@@ -259,3 +259,64 @@ chat.image_too_large:
 chat.unsupported_format:
   en: "Unsupported image format"
   zh-CN: "不支持的图片格式"
+
+# Menu Bar
+menu.about:
+  en: "About ChatGPUI"
+  zh-CN: "关于 ChatGPUI"
+
+menu.settings:
+  en: "Settings..."
+  zh-CN: "设置..."
+
+menu.services:
+  en: "Services"
+  zh-CN: "服务"
+
+menu.quit:
+  en: "Quit ChatGPUI"
+  zh-CN: "退出 ChatGPUI"
+
+menu.file:
+  en: "File"
+  zh-CN: "文件"
+
+menu.new_chat:
+  en: "New Chat"
+  zh-CN: "新建对话"
+
+menu.edit:
+  en: "Edit"
+  zh-CN: "编辑"
+
+menu.undo:
+  en: "Undo"
+  zh-CN: "撤销"
+
+menu.redo:
+  en: "Redo"
+  zh-CN: "重做"
+
+menu.cut:
+  en: "Cut"
+  zh-CN: "剪切"
+
+menu.copy:
+  en: "Copy"
+  zh-CN: "复制"
+
+menu.paste:
+  en: "Paste"
+  zh-CN: "粘贴"
+
+menu.select_all:
+  en: "Select All"
+  zh-CN: "全选"
+
+menu.help:
+  en: "Help"
+  zh-CN: "帮助"
+
+menu.documentation:
+  en: "Documentation"
+  zh-CN: "文档"

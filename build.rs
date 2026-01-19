@@ -17,12 +17,7 @@ fn main() {
             .no_deps()
             .exec()
             .ok()
-            .and_then(|metadata| {
-                metadata
-                    .packages
-                    .into_iter()
-                    .find(|p| p.name == "chatgpui")
-            })
+            .and_then(|metadata| metadata.packages.into_iter().find(|p| p.name == "chatgpui"))
             .and_then(|package| {
                 package
                     .metadata

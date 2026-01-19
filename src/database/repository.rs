@@ -191,6 +191,7 @@ pub struct AttachmentRepository;
 
 impl AttachmentRepository {
     /// Create a new attachment record
+    #[allow(clippy::too_many_arguments)]
     pub async fn create(
         db: &DatabaseConnection,
         id: Uuid,

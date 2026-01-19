@@ -254,16 +254,11 @@ impl ModelSelector {
                             .font_weight(FontWeight::SEMIBOLD),
                     )
                     .child(
-                        div()
-                            .px_2()
-                            .py_0p5()
-                            .rounded_sm()
-                            .bg(theme.muted)
-                            .child(
-                                Label::new(model.id.clone())
-                                    .text_xs()
-                                    .text_color(theme.muted_foreground),
-                            ),
+                        div().px_2().py_0p5().rounded_sm().bg(theme.muted).child(
+                            Label::new(model.id.clone())
+                                .text_xs()
+                                .text_color(theme.muted_foreground),
+                        ),
                     ),
             )
             // Description
@@ -351,8 +346,16 @@ impl ModelSelector {
                                 h_flex()
                                     .gap_1()
                                     .items_center()
-                                    .child(Icon::new(IconName::Eye).size_5().text_color(theme.muted_foreground))
-                                    .child(Label::new("Vision").text_xs().text_color(theme.muted_foreground)),
+                                    .child(
+                                        Icon::new(IconName::Eye)
+                                            .size_5()
+                                            .text_color(theme.muted_foreground),
+                                    )
+                                    .child(
+                                        Label::new("Vision")
+                                            .text_xs()
+                                            .text_color(theme.muted_foreground),
+                                    ),
                             )
                         })
                         .when(model.supports_tools, |el| {
@@ -360,8 +363,16 @@ impl ModelSelector {
                                 h_flex()
                                     .gap_1()
                                     .items_center()
-                                    .child(Icon::new(IconName::Settings2).size_5().text_color(theme.muted_foreground))
-                                    .child(Label::new("Tools").text_xs().text_color(theme.muted_foreground)),
+                                    .child(
+                                        Icon::new(IconName::Settings2)
+                                            .size_5()
+                                            .text_color(theme.muted_foreground),
+                                    )
+                                    .child(
+                                        Label::new("Tools")
+                                            .text_xs()
+                                            .text_color(theme.muted_foreground),
+                                    ),
                             )
                         }),
                 )
@@ -554,7 +565,7 @@ impl Render for ModelSelector {
                                                                 let model = model_for_hover.clone();
                                                                 let entity = entity_for_hover.clone();
                                                                 move |_ev, _window, cx| {
-                                                                    let _ = entity
+                                                                    entity
                                                                         .update(cx, |this: &mut ModelSelector, cx| {
                                                                             if this.hovered_model.as_ref().map(|m| &m.id) != Some(&model.id) {
                                                                                 this.hovered_model =
@@ -584,7 +595,7 @@ impl Render for ModelSelector {
                                                                     });
 
                                                                     // Emit event
-                                                                    let _ = entity
+                                                                    entity
                                                                         .update(cx, |_this: &mut ModelSelector, cx| {
                                                                             cx.emit(
                                                                                 ModelSelectorChangedEvent {

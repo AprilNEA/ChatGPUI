@@ -90,17 +90,17 @@ impl DatabaseManager {
     }
 
     /// Get or create password from .pgpass file
-    fn get_or_create_password(data_dir: &PathBuf) -> Result<String> {
+    fn get_or_create_password(data_dir: &std::path::Path) -> Result<String> {
         let pgpass_file = data_dir.join(".pgpass");
 
         // Try to read existing password
-        if pgpass_file.exists() {
-            if let Ok(content) = std::fs::read_to_string(&pgpass_file) {
-                let password = content.trim().to_string();
-                if !password.is_empty() {
-                    tracing::info!("Retrieved database password from .pgpass file");
-                    return Ok(password);
-                }
+        if pgpass_file.exists()
+            && let Ok(content) = std::fs::read_to_string(&pgpass_file)
+        {
+            let password = content.trim().to_string();
+            if !password.is_empty() {
+                tracing::info!("Retrieved database password from .pgpass file");
+                return Ok(password);
             }
         }
 

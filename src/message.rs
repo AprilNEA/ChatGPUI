@@ -25,6 +25,7 @@ pub enum AttachmentType {
 #[derive(Debug, Clone)]
 pub struct Attachment {
     pub id: Uuid,
+    #[allow(dead_code)]
     pub attachment_type: AttachmentType,
     pub name: String,
     pub mime_type: String,

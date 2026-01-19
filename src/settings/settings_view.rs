@@ -156,7 +156,13 @@ pub struct SettingsView {
 impl SettingsView {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         // Read settings and clone needed values first to avoid borrow issues
-        let (current_language, current_shortcut, current_icon_placement, current_proxy, selected_provider_id) = {
+        let (
+            current_language,
+            current_shortcut,
+            current_icon_placement,
+            current_proxy,
+            selected_provider_id,
+        ) = {
             let settings = get_settings(cx);
             (
                 settings.language.clone(),
@@ -248,8 +254,8 @@ impl SettingsView {
 
         // General settings - Proxy input
         let proxy_input = cx.new(|cx| {
-            let mut state =
-                InputState::new(window, cx).placeholder(t!("settings.proxy_placeholder").to_string());
+            let mut state = InputState::new(window, cx)
+                .placeholder(t!("settings.proxy_placeholder").to_string());
             if let Some(proxy) = &current_proxy {
                 state.set_value(proxy, window, cx);
             }
@@ -626,16 +632,18 @@ impl SettingsView {
                 ))
                 .child(Divider::horizontal())
                 // Auto scroll row with description
-                .child(self.render_settings_row_with_desc(
-                    auto_scroll_label,
-                    auto_scroll_desc,
-                    Switch::new("auto-scroll")
-                        .checked(auto_scroll)
-                        .on_click(cx.listener(|this, checked, _window, cx| {
-                            this.save_auto_scroll(*checked, cx);
-                        })),
-                    cx,
-                ))
+                .child(
+                    self.render_settings_row_with_desc(
+                        auto_scroll_label,
+                        auto_scroll_desc,
+                        Switch::new("auto-scroll")
+                            .checked(auto_scroll)
+                            .on_click(cx.listener(|this, checked, _window, cx| {
+                                this.save_auto_scroll(*checked, cx);
+                            })),
+                        cx,
+                    ),
+                )
                 .child(Divider::horizontal())
                 // Proxy row with description
                 .child(self.render_settings_row_with_desc(
@@ -705,16 +713,8 @@ impl SettingsView {
                     .px_2()
                     .py_2()
                     .gap_1()
-                    .child(
-                        Button::new("add-provider")
-                            .icon(IconName::Plus)
-                            .ghost()
-                    )
-                    .child(
-                        Button::new("remove-provider")
-                            .icon(IconName::Minus)
-                            .ghost()
-                    ),
+                    .child(Button::new("add-provider").icon(IconName::Plus).ghost())
+                    .child(Button::new("remove-provider").icon(IconName::Minus).ghost()),
             )
     }
 
@@ -901,12 +901,14 @@ impl Render for SettingsView {
             .track_focus(&cx.focus_handle())
             .size_full()
             .bg(theme.background)
-            .on_key_down(cx.listener(|_this, event: &gpui::KeyDownEvent, window, _cx| {
-                // Handle Cmd+W to close the settings window
-                if event.keystroke.key == "w" && event.keystroke.modifiers.platform {
-                    window.remove_window();
-                }
-            }))
+            .on_key_down(
+                cx.listener(|_this, event: &gpui::KeyDownEvent, window, _cx| {
+                    // Handle Cmd+W to close the settings window
+                    if event.keystroke.key == "w" && event.keystroke.modifiers.platform {
+                        window.remove_window();
+                    }
+                }),
+            )
             .child(self.render_sidebar(cx))
             .child(
                 v_flex()

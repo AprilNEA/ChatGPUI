@@ -28,11 +28,7 @@ pub async fn ensure_attachments_dir() -> Result<PathBuf> {
 
 /// 保存附件到文件系统
 /// 返回相对于 attachments 目录的路径
-pub async fn save_attachment(
-    attachment_id: Uuid,
-    data: &[u8],
-    extension: &str,
-) -> Result<String> {
+pub async fn save_attachment(attachment_id: Uuid, data: &[u8], extension: &str) -> Result<String> {
     let dir = ensure_attachments_dir().await?;
 
     // 使用 attachment_id 作为文件名，避免冲突
@@ -53,6 +49,7 @@ pub async fn load_attachment(relative_path: &str) -> Result<Vec<u8>> {
 }
 
 /// 删除附件文件
+#[allow(dead_code)]
 pub async fn delete_attachment(relative_path: &str) -> Result<()> {
     let dir = get_attachments_dir();
     let file_path = dir.join(relative_path);
