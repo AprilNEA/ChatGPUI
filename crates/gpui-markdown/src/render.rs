@@ -4,9 +4,8 @@
 
 //! GPUI Markdown rendering component
 
-use std::collections::HashMap;
-use std::hash::{Hash, Hasher};
-use std::sync::{LazyLock, RwLock};
+use std::future::Future;
+use std::sync::Arc;
 
 use gpui::*;
 use gpui_component::{h_flex, scroll::ScrollableElement, v_flex, ActiveTheme};
@@ -16,42 +15,25 @@ use crate::parser::{MarkdownElement, MarkdownParser};
 #[cfg(feature = "syntax-highlighting")]
 use crate::syntax::SyntaxHighlighter;
 
-/// 全局 Markdown 解析缓存
-static PARSE_CACHE: LazyLock<RwLock<HashMap<u64, Vec<MarkdownElement>>>> =
-    LazyLock::new(|| RwLock::new(HashMap::new()));
+struct MarkdownParseAsset;
 
-/// 计算字符串的哈希值
-fn hash_content(content: &str) -> u64 {
-    use std::collections::hash_map::DefaultHasher;
-    let mut hasher = DefaultHasher::new();
-    content.hash(&mut hasher);
-    hasher.finish()
+impl Asset for MarkdownParseAsset {
+    type Source = SharedString;
+    type Output = Arc<Vec<MarkdownElement>>;
+
+    fn load(
+        source: Self::Source,
+        _cx: &mut App,
+    ) -> impl Future<Output = Self::Output> + Send + 'static {
+        async move {
+            let parser = MarkdownParser::new();
+            Arc::new(parser.parse(&source))
+        }
+    }
 }
 
-/// 从缓存获取或解析 Markdown
-fn parse_with_cache(content: &str) -> Vec<MarkdownElement> {
-    let hash = hash_content(content);
-
-    // 先尝试从缓存读取
-    if let Ok(cache) = PARSE_CACHE.read() {
-        if let Some(elements) = cache.get(&hash) {
-            return elements.clone();
-        }
-    }
-
-    // 缓存未命中，解析并存储
-    let parser = MarkdownParser::new();
-    let elements = parser.parse(content);
-
-    if let Ok(mut cache) = PARSE_CACHE.write() {
-        // 限制缓存大小，防止内存泄漏
-        if cache.len() > 1000 {
-            cache.clear();
-        }
-        cache.insert(hash, elements.clone());
-    }
-
-    elements
+struct MarkdownCache {
+    elements: Option<Arc<Vec<MarkdownElement>>>,
 }
 
 /// Style configuration for Markdown rendering
@@ -105,16 +87,20 @@ impl MarkdownStyle {
 #[derive(IntoElement)]
 pub struct Markdown {
     content: SharedString,
+    cache_key: ElementId,
+    allow_highlighting: bool,
     style: MarkdownStyle,
     #[cfg(feature = "syntax-highlighting")]
     highlighter: Option<SyntaxHighlighter>,
 }
 
 impl Markdown {
-    /// Create a new Markdown component with the given content
-    pub fn new(content: impl Into<SharedString>) -> Self {
+    /// Create a new Markdown component with the given content and cache key
+    pub fn new(content: impl Into<SharedString>, cache_key: impl Into<ElementId>) -> Self {
         Self {
             content: content.into(),
+            cache_key: cache_key.into(),
+            allow_highlighting: true,
             style: MarkdownStyle::default(),
             #[cfg(feature = "syntax-highlighting")]
             highlighter: Some(SyntaxHighlighter::new()),
@@ -133,6 +119,12 @@ impl Markdown {
         self
     }
 
+    /// Enable or disable syntax highlighting
+    pub fn allow_syntax_highlighting(mut self, allow: bool) -> Self {
+        self.allow_highlighting = allow;
+        self
+    }
+
     #[cfg(feature = "syntax-highlighting")]
     /// Disable syntax highlighting
     pub fn without_syntax_highlighting(mut self) -> Self {
@@ -142,10 +134,18 @@ impl Markdown {
 }
 
 impl RenderOnce for Markdown {
-    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let cache = window.use_keyed_state(
+            ElementId::from((self.cache_key.clone(), "markdown-cache")),
+            cx,
+            |_window, _cx| MarkdownCache { elements: None },
+        );
         let theme = cx.theme();
-        // 使用缓存的解析结果
-        let elements = parse_with_cache(&self.content);
+        let mut context = RenderContext {
+            cache_key: self.cache_key.clone(),
+            code_block_index: 0,
+            allow_highlighting: self.allow_highlighting,
+        };
 
         let style = ResolvedStyle {
             text_size: self.style.text_size,
@@ -160,19 +160,51 @@ impl RenderOnce for Markdown {
         #[cfg(feature = "syntax-highlighting")]
         let highlighter = self.highlighter;
 
+        let elements = match window.use_asset::<MarkdownParseAsset>(&self.content, cx) {
+            Some(elements) => {
+                let should_update = cache
+                    .read(cx)
+                    .elements
+                    .as_ref()
+                    .map_or(true, |cached| !Arc::ptr_eq(cached, &elements));
+                if should_update {
+                    cache.update(cx, |state, _| {
+                        state.elements = Some(elements.clone());
+                    });
+                }
+                Some(elements)
+            }
+            None => cache.read(cx).elements.clone(),
+        };
+
+        let Some(elements) = elements else {
+            return v_flex()
+                .gap_2()
+                .text_size(style.text_size)
+                .child(div().child(self.content))
+                .into_any_element();
+        };
+
         let rendered: Vec<AnyElement> = elements
-            .into_iter()
+            .iter()
             .map(|el| {
                 render_element(
                     el,
                     &style,
                     #[cfg(feature = "syntax-highlighting")]
                     &highlighter,
+                    &mut context,
+                    window,
+                    cx,
                 )
             })
             .collect();
 
-        v_flex().gap_2().text_size(style.text_size).children(rendered)
+        v_flex()
+            .gap_2()
+            .text_size(style.text_size)
+            .children(rendered)
+            .into_any_element()
     }
 }
 
@@ -187,10 +219,42 @@ struct ResolvedStyle {
     muted_foreground: Hsla,
 }
 
+struct RenderContext {
+    cache_key: ElementId,
+    code_block_index: usize,
+    allow_highlighting: bool,
+}
+
+impl RenderContext {
+    fn next_code_block_index(&mut self) -> usize {
+        let index = self.code_block_index;
+        self.code_block_index += 1;
+        index
+    }
+
+    fn code_block_cache_key(&self, index: usize) -> ElementId {
+        ElementId::from((self.cache_key.clone(), format!("code-block-{}", index)))
+    }
+}
+
+/// Render plain code without syntax highlighting, splitting by lines to avoid extra spacing
+fn render_plain_code(code: &str) -> AnyElement {
+    // Trim trailing newlines to avoid empty lines at the end
+    let code = code.trim_end_matches('\n');
+    let lines: Vec<AnyElement> = code
+        .lines()
+        .map(|line| div().child(line.to_string()).into_any_element())
+        .collect();
+    v_flex().children(lines).into_any_element()
+}
+
 fn render_element(
-    element: MarkdownElement,
+    element: &MarkdownElement,
     style: &ResolvedStyle,
     #[cfg(feature = "syntax-highlighting")] highlighter: &Option<SyntaxHighlighter>,
+    context: &mut RenderContext,
+    window: &mut Window,
+    cx: &mut App,
 ) -> AnyElement {
     match element {
         MarkdownElement::Paragraph(content) => {
@@ -199,6 +263,9 @@ fn render_element(
                 style,
                 #[cfg(feature = "syntax-highlighting")]
                 highlighter,
+                context,
+                window,
+                cx,
             );
             h_flex().flex_wrap().children(children).into_any_element()
         }
@@ -218,6 +285,9 @@ fn render_element(
                 style,
                 #[cfg(feature = "syntax-highlighting")]
                 highlighter,
+                context,
+                window,
+                cx,
             );
 
             h_flex()
@@ -229,19 +299,27 @@ fn render_element(
         }
 
         MarkdownElement::CodeBlock { language, code } => {
+            let code_block_index = context.next_code_block_index();
             #[cfg(feature = "syntax-highlighting")]
             let code_element = if let Some(hl) = highlighter {
-                if let Some(lang) = &language {
-                    hl.highlight(&code, lang)
+                if let Some(lang) = language.as_deref() {
+                    hl.highlight(
+                        code,
+                        lang,
+                        context.code_block_cache_key(code_block_index),
+                        context.allow_highlighting,
+                        window,
+                        cx,
+                    )
                 } else {
-                    div().child(code.clone()).into_any_element()
+                    render_plain_code(code)
                 }
             } else {
-                div().child(code.clone()).into_any_element()
+                render_plain_code(code)
             };
 
             #[cfg(not(feature = "syntax-highlighting"))]
-            let code_element = div().child(code.clone()).into_any_element();
+            let code_element = render_plain_code(code);
 
             let lang_label = language.clone();
             let mut code_block = v_flex()
@@ -277,6 +355,9 @@ fn render_element(
                         style,
                         #[cfg(feature = "syntax-highlighting")]
                         highlighter,
+                        context,
+                        window,
+                        cx,
                     )
                 })
                 .collect();
@@ -302,6 +383,9 @@ fn render_element(
                                 style,
                                 #[cfg(feature = "syntax-highlighting")]
                                 highlighter,
+                                context,
+                                window,
+                                cx,
                             )
                         })
                         .collect();
@@ -336,6 +420,9 @@ fn render_element(
                                 style,
                                 #[cfg(feature = "syntax-highlighting")]
                                 highlighter,
+                                context,
+                                window,
+                                cx,
                             )
                         })
                         .collect();
@@ -345,7 +432,7 @@ fn render_element(
                         .items_start()
                         .child(
                             div()
-                                .child(format!("{}.", start as usize + i))
+                                .child(format!("{}.", *start as usize + i))
                                 .text_color(style.muted_foreground)
                                 .min_w(px(24.)),
                         )
@@ -366,6 +453,9 @@ fn render_element(
                         style,
                         #[cfg(feature = "syntax-highlighting")]
                         highlighter,
+                        context,
+                        window,
+                        cx,
                     )
                 })
                 .collect();
@@ -383,7 +473,7 @@ fn render_element(
         MarkdownElement::Text(text) => div()
             .flex()
             .flex_shrink_0()
-            .child(text)
+            .child(text.clone())
             .into_any_element(),
 
         MarkdownElement::InlineCode(code) => div()
@@ -393,7 +483,7 @@ fn render_element(
             .px_1()
             .font_family("monospace")
             .text_sm()
-            .child(code)
+            .child(code.clone())
             .into_any_element(),
 
         MarkdownElement::Strong(content) => {
@@ -402,6 +492,9 @@ fn render_element(
                 style,
                 #[cfg(feature = "syntax-highlighting")]
                 highlighter,
+                context,
+                window,
+                cx,
             );
             h_flex()
                 .flex_wrap()
@@ -416,6 +509,9 @@ fn render_element(
                 style,
                 #[cfg(feature = "syntax-highlighting")]
                 highlighter,
+                context,
+                window,
+                cx,
             );
             h_flex()
                 .flex_wrap()
@@ -430,6 +526,9 @@ fn render_element(
                 style,
                 #[cfg(feature = "syntax-highlighting")]
                 highlighter,
+                context,
+                window,
+                cx,
             );
             h_flex()
                 .flex_wrap()
@@ -444,6 +543,9 @@ fn render_element(
                 style,
                 #[cfg(feature = "syntax-highlighting")]
                 highlighter,
+                context,
+                window,
+                cx,
             );
             h_flex()
                 .flex_wrap()
@@ -473,9 +575,12 @@ fn render_element(
 }
 
 fn render_inline_children(
-    elements: Vec<MarkdownElement>,
+    elements: &[MarkdownElement],
     style: &ResolvedStyle,
     #[cfg(feature = "syntax-highlighting")] highlighter: &Option<SyntaxHighlighter>,
+    context: &mut RenderContext,
+    window: &mut Window,
+    cx: &mut App,
 ) -> Vec<AnyElement> {
     elements
         .into_iter()
@@ -485,6 +590,9 @@ fn render_inline_children(
                 style,
                 #[cfg(feature = "syntax-highlighting")]
                 highlighter,
+                context,
+                window,
+                cx,
             )
         })
         .collect()

@@ -6,38 +6,53 @@
 
 use gpui::*;
 use gpui_component::v_flex;
-use std::collections::HashMap;
+use std::collections::hash_map::DefaultHasher;
+use std::future::Future;
 use std::hash::{Hash, Hasher};
-use std::sync::{Arc, LazyLock, RwLock};
+use std::sync::{Arc, LazyLock};
 use syntect::easy::HighlightLines;
 use syntect::highlighting::{Style, ThemeSet};
 use syntect::parsing::SyntaxSet;
 use syntect::util::LinesWithEndings;
 
-/// 全局 SyntaxSet 缓存（只加载一次）
+/// Global SyntaxSet cache (loaded once).
 static SYNTAX_SET: LazyLock<Arc<SyntaxSet>> =
     LazyLock::new(|| Arc::new(SyntaxSet::load_defaults_newlines()));
 
-/// 全局 ThemeSet 缓存（只加载一次）
+/// Global ThemeSet cache (loaded once).
 static THEME_SET: LazyLock<Arc<ThemeSet>> = LazyLock::new(|| Arc::new(ThemeSet::load_defaults()));
 
-/// 语法高亮结果缓存
-static HIGHLIGHT_CACHE: LazyLock<RwLock<HashMap<u64, Vec<Vec<(Hsla, String, bool, bool)>>>>> =
-    LazyLock::new(|| RwLock::new(HashMap::new()));
+type HighlightedLines = Vec<Vec<(Hsla, String, bool, bool)>>;
 
-fn hash_code(code: &str, language: &str) -> u64 {
-    use std::collections::hash_map::DefaultHasher;
-    let mut hasher = DefaultHasher::new();
-    code.hash(&mut hasher);
-    language.hash(&mut hasher);
-    hasher.finish()
+#[derive(Clone, Hash, PartialEq, Eq)]
+struct HighlightSource {
+    code: SharedString,
+    language: SharedString,
+    theme: SharedString,
+}
+
+struct HighlightAsset;
+
+impl Asset for HighlightAsset {
+    type Source = HighlightSource;
+    type Output = Arc<HighlightedLines>;
+
+    fn load(
+        source: Self::Source,
+        _cx: &mut App,
+    ) -> impl Future<Output = Self::Output> + Send + 'static {
+        async move { Arc::new(highlight_code(&source)) }
+    }
+}
+
+struct HighlightCache {
+    lines: Option<Arc<HighlightedLines>>,
+    source_hash: Option<u64>,
 }
 
 /// Syntax highlighter for code blocks
 pub struct SyntaxHighlighter {
-    syntax_set: Arc<SyntaxSet>,
-    theme_set: Arc<ThemeSet>,
-    theme_name: String,
+    theme_name: SharedString,
 }
 
 impl Default for SyntaxHighlighter {
@@ -50,81 +65,76 @@ impl SyntaxHighlighter {
     /// Create a new syntax highlighter with default themes
     pub fn new() -> Self {
         Self {
-            syntax_set: SYNTAX_SET.clone(),
-            theme_set: THEME_SET.clone(),
-            theme_name: "base16-ocean.dark".to_string(),
+            theme_name: SharedString::from("base16-ocean.dark"),
         }
     }
 
     /// Set the highlighting theme
     pub fn with_theme(mut self, theme_name: impl Into<String>) -> Self {
-        self.theme_name = theme_name.into();
+        self.theme_name = SharedString::from(theme_name.into());
         self
     }
 
     /// Highlight code and return GPUI elements
-    pub fn highlight(&self, code: &str, language: &str) -> AnyElement {
-        let hash = hash_code(code, language);
+    pub fn highlight(
+        &self,
+        code: &str,
+        language: &str,
+        cache_key: ElementId,
+        allow_highlighting: bool,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> AnyElement {
+        let cache = window.use_keyed_state(
+            ElementId::from((cache_key, "highlight-cache")),
+            cx,
+            |_window, _cx| HighlightCache {
+                lines: None,
+                source_hash: None,
+            },
+        );
+        let normalized = normalize_language(language);
+        let source = HighlightSource {
+            code: SharedString::from(code.to_string()),
+            language: SharedString::from(normalized.to_string()),
+            theme: self.theme_name.clone(),
+        };
+        let source_hash = hash_source(&source);
 
-        // 检查缓存
-        if let Ok(cache) = HIGHLIGHT_CACHE.read() {
-            if let Some(cached_lines) = cache.get(&hash) {
-                return self.render_cached_lines(cached_lines);
-            }
-        }
-
-        // 缓存未命中，进行高亮处理
-        let normalized_lang = normalize_language(language);
-
-        let syntax = self
-            .syntax_set
-            .find_syntax_by_token(normalized_lang)
-            .or_else(|| self.syntax_set.find_syntax_by_extension(normalized_lang))
-            .unwrap_or_else(|| self.syntax_set.find_syntax_plain_text());
-
-        let theme = self
-            .theme_set
-            .themes
-            .get(&self.theme_name)
-            .unwrap_or_else(|| self.theme_set.themes.values().next().unwrap());
-
-        let mut highlighter = HighlightLines::new(syntax, theme);
-
-        let mut cached_lines: Vec<Vec<(Hsla, String, bool, bool)>> = Vec::new();
-
-        for line in LinesWithEndings::from(code) {
-            match highlighter.highlight_line(line, &self.syntax_set) {
-                Ok(ranges) => {
-                    let line_data: Vec<(Hsla, String, bool, bool)> = ranges
-                        .iter()
-                        .map(|(style, text)| {
-                            let color = self.style_to_hsla(style);
-                            let is_bold = style
-                                .font_style
-                                .contains(syntect::highlighting::FontStyle::BOLD);
-                            let is_italic = style
-                                .font_style
-                                .contains(syntect::highlighting::FontStyle::ITALIC);
-                            (color, text.to_string(), is_bold, is_italic)
-                        })
-                        .collect();
-                    cached_lines.push(line_data);
+        let lines = match window.use_asset::<HighlightAsset>(&source, cx) {
+            Some(cached_lines) => {
+                let should_update = cache
+                    .read(cx)
+                    .lines
+                    .as_ref()
+                    .map_or(true, |cached| !Arc::ptr_eq(cached, &cached_lines));
+                if should_update {
+                    cache.update(cx, |state, _| {
+                        state.lines = Some(cached_lines.clone());
+                        state.source_hash = Some(source_hash);
+                    });
                 }
-                Err(_) => {
-                    cached_lines.push(vec![(hsla(0.0, 0.0, 0.8, 1.0), line.to_string(), false, false)]);
+                Some(cached_lines)
+            }
+            None => {
+                let cache_state = cache.read(cx);
+                if cache_state.source_hash == Some(source_hash) {
+                    cache_state.lines.clone()
+                } else {
+                    None
                 }
             }
-        }
+        };
 
-        // 存入缓存
-        if let Ok(mut cache) = HIGHLIGHT_CACHE.write() {
-            if cache.len() > 500 {
-                cache.clear();
+        if allow_highlighting {
+            if let Some(cached_lines) = lines {
+                self.render_cached_lines(&cached_lines)
+            } else {
+                self.render_plain_lines(code)
             }
-            cache.insert(hash, cached_lines.clone());
+        } else {
+            self.render_plain_lines(code)
         }
-
-        self.render_cached_lines(&cached_lines)
     }
 
     fn render_cached_lines(&self, cached_lines: &[Vec<(Hsla, String, bool, bool)>]) -> AnyElement {
@@ -151,38 +161,108 @@ impl SyntaxHighlighter {
         v_flex().children(lines).into_any_element()
     }
 
-    fn style_to_hsla(&self, style: &Style) -> Hsla {
-        // Convert RGB to HSL
-        let r = style.foreground.r as f32 / 255.0;
-        let g = style.foreground.g as f32 / 255.0;
-        let b = style.foreground.b as f32 / 255.0;
-        let a = style.foreground.a as f32 / 255.0;
+    fn render_plain_lines(&self, code: &str) -> AnyElement {
+        // Use .lines() instead of LinesWithEndings to avoid trailing newlines causing extra spacing
+        let lines: Vec<AnyElement> = code
+            .lines()
+            .map(|line| div().flex().flex_row().child(line.to_string()).into_any_element())
+            .collect();
 
-        let max = r.max(g).max(b);
-        let min = r.min(g).min(b);
-        let l = (max + min) / 2.0;
-
-        if (max - min).abs() < f32::EPSILON {
-            return hsla(0.0, 0.0, l, a);
-        }
-
-        let d = max - min;
-        let s = if l > 0.5 {
-            d / (2.0 - max - min)
-        } else {
-            d / (max + min)
-        };
-
-        let h = if (max - r).abs() < f32::EPSILON {
-            ((g - b) / d + if g < b { 6.0 } else { 0.0 }) / 6.0
-        } else if (max - g).abs() < f32::EPSILON {
-            ((b - r) / d + 2.0) / 6.0
-        } else {
-            ((r - g) / d + 4.0) / 6.0
-        };
-
-        hsla(h, s, l, a)
+        v_flex().children(lines).into_any_element()
     }
+}
+
+fn highlight_code(source: &HighlightSource) -> HighlightedLines {
+    let syntax_set = SYNTAX_SET.clone();
+    let theme_set = THEME_SET.clone();
+    let normalized_lang = normalize_language(source.language.as_ref());
+
+    let syntax = syntax_set
+        .find_syntax_by_token(normalized_lang)
+        .or_else(|| syntax_set.find_syntax_by_extension(normalized_lang))
+        .unwrap_or_else(|| syntax_set.find_syntax_plain_text());
+
+    let theme = theme_set
+        .themes
+        .get(source.theme.as_ref())
+        .unwrap_or_else(|| theme_set.themes.values().next().unwrap());
+
+    let mut highlighter = HighlightLines::new(syntax, theme);
+    let mut cached_lines: HighlightedLines = Vec::new();
+
+    // LinesWithEndings preserves the trailing '\n' on each line.
+    // Since we render each line as a separate div in a vertical flex container,
+    // we must strip the newline to prevent double line spacing (one from the div
+    // layout and another from the embedded newline character).
+    for line in LinesWithEndings::from(source.code.as_ref()) {
+        match highlighter.highlight_line(line, &syntax_set) {
+            Ok(ranges) => {
+                let line_data: Vec<(Hsla, String, bool, bool)> = ranges
+                    .iter()
+                    .map(|(style, text)| {
+                        let color = style_to_hsla(style);
+                        let is_bold = style
+                            .font_style
+                            .contains(syntect::highlighting::FontStyle::BOLD);
+                        let is_italic = style
+                            .font_style
+                            .contains(syntect::highlighting::FontStyle::ITALIC);
+                        (color, text.trim_end_matches('\n').to_string(), is_bold, is_italic)
+                    })
+                    .collect();
+                cached_lines.push(line_data);
+            }
+            Err(_) => {
+                cached_lines.push(vec![(
+                    hsla(0.0, 0.0, 0.8, 1.0),
+                    line.trim_end_matches('\n').to_string(),
+                    false,
+                    false,
+                )]);
+            }
+        }
+    }
+
+    cached_lines
+}
+
+fn style_to_hsla(style: &Style) -> Hsla {
+    // Convert RGB to HSL
+    let r = style.foreground.r as f32 / 255.0;
+    let g = style.foreground.g as f32 / 255.0;
+    let b = style.foreground.b as f32 / 255.0;
+    let a = style.foreground.a as f32 / 255.0;
+
+    let max = r.max(g).max(b);
+    let min = r.min(g).min(b);
+    let l = (max + min) / 2.0;
+
+    if (max - min).abs() < f32::EPSILON {
+        return hsla(0.0, 0.0, l, a);
+    }
+
+    let d = max - min;
+    let s = if l > 0.5 {
+        d / (2.0 - max - min)
+    } else {
+        d / (max + min)
+    };
+
+    let h = if (max - r).abs() < f32::EPSILON {
+        ((g - b) / d + if g < b { 6.0 } else { 0.0 }) / 6.0
+    } else if (max - g).abs() < f32::EPSILON {
+        ((b - r) / d + 2.0) / 6.0
+    } else {
+        ((r - g) / d + 4.0) / 6.0
+    };
+
+    hsla(h, s, l, a)
+}
+
+fn hash_source(source: &HighlightSource) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    source.hash(&mut hasher);
+    hasher.finish()
 }
 
 /// Map common language aliases to syntect syntax names

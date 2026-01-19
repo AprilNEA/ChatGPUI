@@ -13,6 +13,9 @@ use gpui_markdown::Markdown;
 use uuid::Uuid;
 
 use crate::message::{Message, MessageStatus, Role};
+use crate::settings::get_settings;
+
+const AUTO_SCROLL_THRESHOLD: Pixels = px(24.);
 
 pub struct MessageList {
     /// History items keyed by message id for stable identity.
@@ -24,6 +27,10 @@ pub struct MessageList {
     scroll_handle: ScrollHandle,
     /// Whether to scroll to bottom on next render.
     pending_scroll_to_bottom: bool,
+    /// Whether the view should keep following the bottom.
+    stick_to_bottom: bool,
+    /// Maximum scroll height observed during streaming to avoid jitter on reflow.
+    max_scroll_height: Pixels,
 }
 
 impl MessageList {
@@ -34,6 +41,8 @@ impl MessageList {
             streaming_item: None,
             scroll_handle: ScrollHandle::new(),
             pending_scroll_to_bottom: false,
+            stick_to_bottom: true,
+            max_scroll_height: Pixels::ZERO,
         }
     }
 
@@ -122,15 +131,50 @@ impl MessageList {
         self.pending_scroll_to_bottom = true;
         cx.notify();
     }
+
+    fn is_near_bottom(&self) -> bool {
+        let max_offset = self.scroll_handle.max_offset().height;
+        if max_offset <= Pixels::ZERO {
+            return true;
+        }
+        let offset = self.scroll_handle.offset().y;
+        (offset + max_offset).abs() <= AUTO_SCROLL_THRESHOLD
+    }
 }
 
 impl Render for MessageList {
-    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-        // Perform scroll during render.
-        if self.pending_scroll_to_bottom {
-            self.scroll_handle.scroll_to_bottom();
-            self.pending_scroll_to_bottom = false;
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let auto_scroll = get_settings(cx).auto_scroll;
+        let near_bottom = self.is_near_bottom();
+        if !auto_scroll {
+            self.stick_to_bottom = false;
+        } else if near_bottom {
+            self.stick_to_bottom = true;
         }
+
+        let should_follow = auto_scroll && self.stick_to_bottom;
+        let streaming_active = self.streaming_item.is_some();
+        let current_max = self.scroll_handle.max_offset().height;
+        let (spacer_height, has_spacer) = if should_follow && streaming_active {
+            let current_max_f: f32 = current_max.into();
+            let max_f: f32 = self.max_scroll_height.into();
+            let target_max = max_f.max(current_max_f);
+            self.max_scroll_height = Pixels::from(target_max);
+            if target_max > current_max_f {
+                (Pixels::from(target_max - current_max_f), true)
+            } else {
+                (Pixels::ZERO, false)
+            }
+        } else {
+            self.max_scroll_height = current_max;
+            (Pixels::ZERO, false)
+        };
+
+        // Keep following the bottom while enabled to avoid jitter from async layout updates.
+        if should_follow {
+            self.scroll_handle.scroll_to_bottom();
+        }
+        self.pending_scroll_to_bottom = false;
 
         // History items (entities with stable identity).
         let history_items = self
@@ -140,6 +184,7 @@ impl Render for MessageList {
 
         // Streaming message (if any).
         let streaming_item = self.streaming_item.clone();
+        let view = cx.weak_entity();
 
         div()
             .id("message-list")
@@ -149,13 +194,26 @@ impl Render for MessageList {
             .overflow_x_hidden()
             .overflow_y_scroll()
             .track_scroll(&self.scroll_handle)
+            .on_scroll_wheel(move |event, window, cx| {
+                let delta = event.delta.pixel_delta(window.line_height());
+                if delta.y != Pixels::ZERO {
+                    if let Some(view) = view.upgrade() {
+                        view.update(cx, |this, cx| {
+                            this.stick_to_bottom = false;
+                            this.pending_scroll_to_bottom = false;
+                            cx.notify();
+                        });
+                    }
+                }
+            })
             .child(
                 v_flex()
                     .w_full()
                     .p_4()
                     .gap_6()
                     .children(history_items)
-                    .children(streaming_item),
+                    .children(streaming_item)
+                    .when(has_spacer, |this| this.child(div().h(spacer_height))),
             )
     }
 }
@@ -257,6 +315,7 @@ impl Render for MessageItem {
         let status = self.status().clone();
         let is_user = role == Role::User;
         let is_streaming = matches!(status, MessageStatus::Streaming);
+        let message_id = self.id;
 
         if is_user {
             // User messages: bubble style, right-aligned
@@ -293,7 +352,10 @@ impl Render for MessageItem {
                             this.child(Skeleton::new().h_4().w_48())
                         })
                         .when(!content.is_empty(), |this| {
-                            this.child(Markdown::new(content.clone()))
+                            this.child(
+                                Markdown::new(content.clone(), message_id)
+                                    .allow_syntax_highlighting(!is_streaming),
+                            )
                         }),
                 )
                 .when(is_streaming, |this| {
