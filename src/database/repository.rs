@@ -2,6 +2,8 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 
+#![allow(dead_code)]
+
 use anyhow::Result;
 use chrono::Utc;
 use sea_orm::{

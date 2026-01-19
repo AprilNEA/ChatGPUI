@@ -24,6 +24,7 @@ impl AuthMethod {
         .to_string()
     }
 
+    #[allow(dead_code)]
     pub fn all() -> Vec<AuthMethod> {
         vec![AuthMethod::ApiKey, AuthMethod::Bearer, AuthMethod::None]
     }
@@ -161,11 +162,13 @@ impl Provider {
     }
 
     /// Get the list of available models for this provider
+    #[allow(dead_code)]
     pub fn models(&self) -> Vec<Model> {
         llm::get_models_for_provider(&self.id)
     }
 
     /// Check if this provider has a native implementation
+    #[allow(dead_code)]
     pub fn is_implemented(&self) -> bool {
         matches!(self.id.as_str(), "anthropic")
     }

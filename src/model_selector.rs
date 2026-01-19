@@ -20,6 +20,7 @@ use crate::llm::{self, Model};
 use crate::settings::{get_settings, update_settings};
 
 /// Event emitted when the model selection changes
+#[allow(dead_code)]
 pub struct ModelSelectorChangedEvent {
     pub provider_id: String,
     pub model_id: String,
@@ -132,6 +133,7 @@ impl ModelSelector {
     }
 
     /// Refresh models from API
+    #[allow(dead_code)]
     pub fn refresh_models(&mut self, cx: &mut Context<Self>) {
         // Clear cache and re-fetch
         self.cached_models.clear();
@@ -169,6 +171,7 @@ impl ModelSelector {
         )
     }
 
+    #[allow(dead_code)]
     fn get_models_for_provider(&self, provider_id: &str) -> Vec<Model> {
         self.cached_models
             .get(provider_id)
@@ -221,9 +224,11 @@ impl ModelSelector {
             .w(px(280.))
             .p_3()
             .gap_3()
-            .border_l_1()
-            .border_color(theme.border)
             .bg(theme.popover)
+            .border_1()
+            .border_color(theme.border)
+            .rounded_lg()
+            .shadow_lg()
             // Header with model name
             .child(
                 v_flex()
@@ -381,6 +386,12 @@ impl Render for ModelSelector {
                     .when(collapsed, |el| el.pl(px(96.)))
                     .child(
                         Popover::new("model-selector-popover")
+                            .appearance(false)
+                            .bg(transparent_black())
+                            .p_0()
+                            .rounded_none()
+                            .shadow_none()
+                            .border_0()
                             .trigger(
                                 Button::new("model-trigger")
                                     .ghost()
@@ -416,24 +427,21 @@ impl Render for ModelSelector {
 
                                 let theme = cx.theme();
 
-                                // Two-panel layout: models list + details
+                                // Two-panel layout: models list + details (separated)
                                 h_flex()
-                                    .bg(theme.popover)
-                                    .rounded_lg()
-                                    .border_1()
-                                    .border_color(theme.border)
-                                    .shadow_lg()
-                                    .max_h(px(400.))
-                                    .overflow_hidden()
+                                    .gap_2()
+                                    .items_start()
                                     // Left panel: models list
                                     .child(
                                         div()
                                             .id("model-list")
                                             .w(px(280.))
-                                            .h_full()
-                                            .min_h_0()
-                                            .flex()
-                                            .flex_col()
+                                            .max_h(px(400.))
+                                            .bg(theme.popover)
+                                            .border_1()
+                                            .border_color(theme.border)
+                                            .rounded_lg()
+                                            .shadow_lg()
                                             .overflow_y_scroll()
                                             .py_1()
                                             .children(providers.iter().flat_map(|provider| {

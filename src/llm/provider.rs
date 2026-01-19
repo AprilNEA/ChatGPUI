@@ -39,6 +39,7 @@ impl ProviderConfig {
 
 /// Trait that all LLM providers must implement
 #[async_trait]
+#[allow(dead_code)]
 pub trait LlmProvider: Send + Sync {
     /// Returns the unique identifier for this provider (e.g., "anthropic")
     fn id(&self) -> &str;

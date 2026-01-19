@@ -112,7 +112,6 @@ impl RenderOnce for Markdown {
             inline_code_bg: self.style.inline_code_bg.unwrap_or(theme.muted),
             link_color: self.style.link_color.unwrap_or(theme.link),
             blockquote_border: self.style.blockquote_border.unwrap_or(theme.border),
-            foreground: theme.foreground,
             muted_foreground: theme.muted_foreground,
         };
 
@@ -143,7 +142,6 @@ struct ResolvedStyle {
     inline_code_bg: Hsla,
     link_color: Hsla,
     blockquote_border: Hsla,
-    foreground: Hsla,
     muted_foreground: Hsla,
 }
 

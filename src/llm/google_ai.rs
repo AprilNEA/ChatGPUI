@@ -84,6 +84,7 @@ struct GoogleAICandidate {
 
 impl GoogleAIProvider {
     /// Default Google AI API base URL
+    #[allow(dead_code)]
     pub const DEFAULT_BASE_URL: &'static str = "https://generativelanguage.googleapis.com/v1beta";
 
     /// Create a new Google AI provider with the given configuration

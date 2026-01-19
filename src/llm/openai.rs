@@ -35,6 +35,7 @@ struct ModelsResponse {
 
 /// Model info from OpenAI API
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct ApiModel {
     id: String,
     owned_by: String,
@@ -73,6 +74,7 @@ struct OpenAIDelta {
 
 impl OpenAIProvider {
     /// Default OpenAI API base URL
+    #[allow(dead_code)]
     pub const DEFAULT_BASE_URL: &'static str = "https://api.openai.com/v1";
 
     /// Create a new OpenAI provider with the given configuration

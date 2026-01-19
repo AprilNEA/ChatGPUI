@@ -7,4 +7,5 @@ pub mod repository;
 pub mod service;
 
 pub use entity::{conversation, message};
+#[allow(unused_imports)]
 pub use service::{DatabaseService, get_db, init};

@@ -28,6 +28,7 @@ pub struct Message {
     pub role: Role,
     pub content: String,
     pub status: MessageStatus,
+    #[allow(dead_code)]
     pub created_at: DateTime<Utc>,
 }
 
@@ -46,6 +47,7 @@ impl Message {
         Self::new(Role::User, content)
     }
 
+    #[allow(dead_code)]
     pub fn assistant(content: impl Into<String>) -> Self {
         Self::new(Role::Assistant, content)
     }

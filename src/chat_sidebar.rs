@@ -120,12 +120,13 @@ impl ChatSidebar {
     fn render_search(&mut self, _cx: &mut Context<Self>) -> impl IntoElement {
         h_flex().w_full().px_3().pb_2().child(
             Input::new(&self.search_input)
-                .prefix(Icon::new(IconName::Search).size_4())
+                .prefix(Icon::new(IconName::Search).size_6())
                 .xsmall()
                 .appearance(false),
         )
     }
 
+    #[allow(dead_code)]
     fn render_quick_tags(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
 
@@ -138,6 +139,7 @@ impl ChatSidebar {
             .child(self.render_tag("Company", "🏢", &theme))
     }
 
+    #[allow(dead_code)]
     fn render_tag(
         &self,
         label: &str,
@@ -251,10 +253,10 @@ impl ChatSidebar {
                                     .overflow_hidden()
                                     .child(
                                         h_flex()
-                                            .size_4()
+                                            .size_6()
                                             .items_center()
                                             .justify_center()
-                                            .text_xs()
+                                            .text_sm()
                                             .child(item.provider_icon),
                                     )
                                     .child(Label::new(item.title).text_sm().truncate()),
@@ -277,12 +279,12 @@ impl ChatSidebar {
             .border_color(theme.border)
             .child(
                 h_flex()
-                    .size_6()
+                    .size_8()
                     .rounded_full()
                     .bg(theme.primary)
                     .items_center()
                     .justify_center()
-                    .text_xs()
+                    .text_sm()
                     .text_color(theme.primary_foreground)
                     .child("A"),
             )

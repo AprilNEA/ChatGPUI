@@ -35,6 +35,7 @@ struct ModelsResponse {
 
 /// Model info from Anthropic API
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct ApiModel {
     id: String,
     display_name: String,
@@ -67,6 +68,7 @@ struct AnthropicStreamEvent {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct AnthropicDelta {
     #[serde(rename = "type")]
     delta_type: Option<String>,
@@ -75,6 +77,7 @@ struct AnthropicDelta {
 
 impl AnthropicProvider {
     /// Default Anthropic API base URL
+    #[allow(dead_code)]
     pub const DEFAULT_BASE_URL: &'static str = "https://api.anthropic.com/v1";
 
     /// Create a new Anthropic provider with the given configuration
@@ -90,11 +93,13 @@ impl AnthropicProvider {
     }
 
     /// Create from API key with default base URL
+    #[allow(dead_code)]
     pub fn with_api_key(api_key: impl Into<String>) -> Self {
         Self::new(ProviderConfig::new(api_key, Self::DEFAULT_BASE_URL))
     }
 
     /// Create from environment variables
+    #[allow(dead_code)]
     pub fn from_env() -> Result<Self> {
         let api_key = std::env::var("ANTHROPIC_API_KEY")
             .map_err(|_| anyhow!("ANTHROPIC_API_KEY environment variable not set"))?;

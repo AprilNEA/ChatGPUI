@@ -64,12 +64,14 @@ impl ModelCache {
     }
 
     /// Invalidate cache for a specific provider
+    #[allow(dead_code)]
     pub async fn invalidate(&self, provider_id: &str) {
         let mut cache = self.cache.write().await;
         cache.remove(provider_id);
     }
 
     /// Invalidate all caches
+    #[allow(dead_code)]
     pub async fn invalidate_all(&self) {
         let mut cache = self.cache.write().await;
         cache.clear();

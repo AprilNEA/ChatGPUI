@@ -19,6 +19,7 @@ use crate::{
 };
 
 /// Event emitted when a conversation is created or updated
+#[allow(dead_code)]
 pub struct ConversationUpdatedEvent {
     pub conversation_id: Uuid,
 }
@@ -375,11 +376,13 @@ impl ChatView {
     }
 
     /// Set the current model to use
+    #[allow(dead_code)]
     pub fn set_model(&mut self, model_id: String, _cx: &mut Context<Self>) {
         self.current_model_id = model_id;
     }
 
     /// Get available models from the current provider
+    #[allow(dead_code)]
     pub fn available_models(&self) -> Vec<llm::Model> {
         self.llm_provider
             .as_ref()
