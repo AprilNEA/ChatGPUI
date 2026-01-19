@@ -27,6 +27,14 @@ menu.not_configured:
   en: "Not Configured"
   zh-CN: "未配置"
 
+menu.no_provider_configured:
+  en: "No provider configured"
+  zh-CN: "尚未配置提供商"
+
+menu.open_settings:
+  en: "Open Settings"
+  zh-CN: "打开设置"
+
 sidebar.search:
   en: "Search"
   zh-CN: "搜索"

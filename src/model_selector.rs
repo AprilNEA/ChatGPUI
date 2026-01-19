@@ -17,7 +17,7 @@ use gpui_component::{
 use gpui_tokio_bridge::Tokio;
 
 use crate::llm::{self, Model};
-use crate::settings::{get_settings, update_settings};
+use crate::settings::{OpenSettings, get_settings, update_settings};
 
 /// Event emitted when the model selection changes
 #[allow(dead_code)]
@@ -426,6 +426,39 @@ impl Render for ModelSelector {
                                     .collect();
 
                                 let theme = cx.theme();
+
+                                // Show empty state with settings button if no providers configured
+                                if providers.is_empty() {
+                                    return v_flex()
+                                        .w(px(280.))
+                                        .p_4()
+                                        .gap_3()
+                                        .bg(theme.popover)
+                                        .border_1()
+                                        .border_color(theme.border)
+                                        .rounded_lg()
+                                        .shadow_lg()
+                                        .items_center()
+                                        .child(
+                                            Icon::new(IconName::Settings)
+                                                .size_8()
+                                                .text_color(theme.muted_foreground),
+                                        )
+                                        .child(
+                                            Label::new(t!("menu.no_provider_configured").to_string())
+                                                .text_sm()
+                                                .text_color(theme.muted_foreground),
+                                        )
+                                        .child(
+                                            Button::new("open-settings")
+                                                .label(t!("menu.open_settings").to_string())
+                                                .small()
+                                                .on_click(|_ev, window, cx| {
+                                                    window.dispatch_action(Box::new(OpenSettings), cx);
+                                                }),
+                                        )
+                                        .into_any_element();
+                                }
 
                                 // Two-panel layout: models list + details (separated)
                                 h_flex()
