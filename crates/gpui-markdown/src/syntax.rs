@@ -6,11 +6,32 @@
 
 use gpui::*;
 use gpui_component::v_flex;
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
+use std::sync::{Arc, LazyLock, RwLock};
 use syntect::easy::HighlightLines;
 use syntect::highlighting::{Style, ThemeSet};
 use syntect::parsing::SyntaxSet;
 use syntect::util::LinesWithEndings;
+
+/// 全局 SyntaxSet 缓存（只加载一次）
+static SYNTAX_SET: LazyLock<Arc<SyntaxSet>> =
+    LazyLock::new(|| Arc::new(SyntaxSet::load_defaults_newlines()));
+
+/// 全局 ThemeSet 缓存（只加载一次）
+static THEME_SET: LazyLock<Arc<ThemeSet>> = LazyLock::new(|| Arc::new(ThemeSet::load_defaults()));
+
+/// 语法高亮结果缓存
+static HIGHLIGHT_CACHE: LazyLock<RwLock<HashMap<u64, Vec<Vec<(Hsla, String, bool, bool)>>>>> =
+    LazyLock::new(|| RwLock::new(HashMap::new()));
+
+fn hash_code(code: &str, language: &str) -> u64 {
+    use std::collections::hash_map::DefaultHasher;
+    let mut hasher = DefaultHasher::new();
+    code.hash(&mut hasher);
+    language.hash(&mut hasher);
+    hasher.finish()
+}
 
 /// Syntax highlighter for code blocks
 pub struct SyntaxHighlighter {
@@ -29,8 +50,8 @@ impl SyntaxHighlighter {
     /// Create a new syntax highlighter with default themes
     pub fn new() -> Self {
         Self {
-            syntax_set: Arc::new(SyntaxSet::load_defaults_newlines()),
-            theme_set: Arc::new(ThemeSet::load_defaults()),
+            syntax_set: SYNTAX_SET.clone(),
+            theme_set: THEME_SET.clone(),
             theme_name: "base16-ocean.dark".to_string(),
         }
     }
@@ -43,6 +64,16 @@ impl SyntaxHighlighter {
 
     /// Highlight code and return GPUI elements
     pub fn highlight(&self, code: &str, language: &str) -> AnyElement {
+        let hash = hash_code(code, language);
+
+        // 检查缓存
+        if let Ok(cache) = HIGHLIGHT_CACHE.read() {
+            if let Some(cached_lines) = cache.get(&hash) {
+                return self.render_cached_lines(cached_lines);
+            }
+        }
+
+        // 缓存未命中，进行高亮处理
         let normalized_lang = normalize_language(language);
 
         let syntax = self
@@ -59,50 +90,65 @@ impl SyntaxHighlighter {
 
         let mut highlighter = HighlightLines::new(syntax, theme);
 
-        let mut lines: Vec<AnyElement> = Vec::new();
+        let mut cached_lines: Vec<Vec<(Hsla, String, bool, bool)>> = Vec::new();
 
         for line in LinesWithEndings::from(code) {
             match highlighter.highlight_line(line, &self.syntax_set) {
                 Ok(ranges) => {
-                    let line_element = self.render_highlighted_line(&ranges);
-                    lines.push(line_element);
+                    let line_data: Vec<(Hsla, String, bool, bool)> = ranges
+                        .iter()
+                        .map(|(style, text)| {
+                            let color = self.style_to_hsla(style);
+                            let is_bold = style
+                                .font_style
+                                .contains(syntect::highlighting::FontStyle::BOLD);
+                            let is_italic = style
+                                .font_style
+                                .contains(syntect::highlighting::FontStyle::ITALIC);
+                            (color, text.to_string(), is_bold, is_italic)
+                        })
+                        .collect();
+                    cached_lines.push(line_data);
                 }
                 Err(_) => {
-                    // Fallback to plain text if highlighting fails
-                    lines.push(div().child(line.to_string()).into_any_element());
+                    cached_lines.push(vec![(hsla(0.0, 0.0, 0.8, 1.0), line.to_string(), false, false)]);
                 }
             }
         }
 
-        v_flex().children(lines).into_any_element()
+        // 存入缓存
+        if let Ok(mut cache) = HIGHLIGHT_CACHE.write() {
+            if cache.len() > 500 {
+                cache.clear();
+            }
+            cache.insert(hash, cached_lines.clone());
+        }
+
+        self.render_cached_lines(&cached_lines)
     }
 
-    fn render_highlighted_line(&self, ranges: &[(Style, &str)]) -> AnyElement {
-        let spans: Vec<AnyElement> = ranges
+    fn render_cached_lines(&self, cached_lines: &[Vec<(Hsla, String, bool, bool)>]) -> AnyElement {
+        let lines: Vec<AnyElement> = cached_lines
             .iter()
-            .map(|(style, text)| {
-                let color = self.style_to_hsla(style);
-                let is_bold = style
-                    .font_style
-                    .contains(syntect::highlighting::FontStyle::BOLD);
-                let is_italic = style
-                    .font_style
-                    .contains(syntect::highlighting::FontStyle::ITALIC);
-
-                let mut el = div().text_color(color).child(text.to_string());
-
-                if is_bold {
-                    el = el.font_weight(FontWeight::BOLD);
-                }
-                if is_italic {
-                    el = el.italic();
-                }
-
-                el.into_any_element()
+            .map(|line_data| {
+                let spans: Vec<AnyElement> = line_data
+                    .iter()
+                    .map(|(color, text, is_bold, is_italic)| {
+                        let mut el = div().text_color(*color).child(text.clone());
+                        if *is_bold {
+                            el = el.font_weight(FontWeight::BOLD);
+                        }
+                        if *is_italic {
+                            el = el.italic();
+                        }
+                        el.into_any_element()
+                    })
+                    .collect();
+                div().flex().flex_row().children(spans).into_any_element()
             })
             .collect();
 
-        div().flex().flex_row().children(spans).into_any_element()
+        v_flex().children(lines).into_any_element()
     }
 
     fn style_to_hsla(&self, style: &Style) -> Hsla {

@@ -4,6 +4,10 @@
 
 //! GPUI Markdown rendering component
 
+use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
+use std::sync::{LazyLock, RwLock};
+
 use gpui::*;
 use gpui_component::{h_flex, scroll::ScrollableElement, v_flex, ActiveTheme};
 
@@ -11,6 +15,44 @@ use crate::parser::{MarkdownElement, MarkdownParser};
 
 #[cfg(feature = "syntax-highlighting")]
 use crate::syntax::SyntaxHighlighter;
+
+/// 全局 Markdown 解析缓存
+static PARSE_CACHE: LazyLock<RwLock<HashMap<u64, Vec<MarkdownElement>>>> =
+    LazyLock::new(|| RwLock::new(HashMap::new()));
+
+/// 计算字符串的哈希值
+fn hash_content(content: &str) -> u64 {
+    use std::collections::hash_map::DefaultHasher;
+    let mut hasher = DefaultHasher::new();
+    content.hash(&mut hasher);
+    hasher.finish()
+}
+
+/// 从缓存获取或解析 Markdown
+fn parse_with_cache(content: &str) -> Vec<MarkdownElement> {
+    let hash = hash_content(content);
+
+    // 先尝试从缓存读取
+    if let Ok(cache) = PARSE_CACHE.read() {
+        if let Some(elements) = cache.get(&hash) {
+            return elements.clone();
+        }
+    }
+
+    // 缓存未命中，解析并存储
+    let parser = MarkdownParser::new();
+    let elements = parser.parse(content);
+
+    if let Ok(mut cache) = PARSE_CACHE.write() {
+        // 限制缓存大小，防止内存泄漏
+        if cache.len() > 1000 {
+            cache.clear();
+        }
+        cache.insert(hash, elements.clone());
+    }
+
+    elements
+}
 
 /// Style configuration for Markdown rendering
 #[derive(Clone)]
@@ -102,8 +144,8 @@ impl Markdown {
 impl RenderOnce for Markdown {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
-        let parser = MarkdownParser::new();
-        let elements = parser.parse(&self.content);
+        // 使用缓存的解析结果
+        let elements = parse_with_cache(&self.content);
 
         let style = ResolvedStyle {
             text_size: self.style.text_size,

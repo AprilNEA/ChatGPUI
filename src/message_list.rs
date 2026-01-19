@@ -13,24 +13,40 @@ use crate::message::{Message, MessageStatus, Role};
 
 pub struct MessageList {
     messages: Vec<Message>,
+    scroll_handle: ScrollHandle,
+    /// 是否需要在下次渲染时滚动到底部
+    pending_scroll_to_bottom: bool,
 }
 
 impl MessageList {
     pub fn new(_cx: &mut Context<Self>) -> Self {
         Self {
             messages: Vec::new(),
+            scroll_handle: ScrollHandle::new(),
+            pending_scroll_to_bottom: false,
         }
     }
 
     pub fn set_messages(&mut self, messages: Vec<Message>, cx: &mut Context<Self>) {
+        let new_message_added = messages.len() > self.messages.len();
         self.messages = messages;
+
+        // 如果有新消息，标记需要滚动到底部
+        if new_message_added {
+            self.pending_scroll_to_bottom = true;
+        }
+
         cx.notify();
     }
 }
 
 impl Render for MessageList {
     fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-        let messages = self.messages.clone();
+        // 在渲染时执行滚动
+        if self.pending_scroll_to_bottom {
+            self.scroll_handle.scroll_to_bottom();
+            self.pending_scroll_to_bottom = false;
+        }
 
         div()
             .id("message-list")
@@ -39,12 +55,13 @@ impl Render for MessageList {
             .min_h_0()
             .overflow_x_hidden()
             .overflow_y_scroll()
+            .track_scroll(&self.scroll_handle)
             .child(
                 v_flex()
                     .w_full()
                     .p_4()
                     .gap_6()
-                    .children(messages.into_iter().map(|msg| MessageItem::new(msg))),
+                    .children(self.messages.iter().map(|msg| MessageItem::new(msg.clone()))),
             )
     }
 }
