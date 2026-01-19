@@ -407,20 +407,18 @@ impl Render for ChatView {
         let theme = cx.theme();
 
         v_flex()
-            .size_full()
+            .id("chat-view")
+            .flex_1()
+            .w_full()
             .min_h_0()
             .overflow_hidden()
             .bg(theme.background)
+            // Message list takes all available space
+            .child(self.message_list.clone())
+            // Input stays at bottom
             .child(
                 div()
-                    .flex_1()
-                    .w_full()
-                    .min_h_0()
-                    .overflow_hidden()
-                    .child(self.message_list.clone()),
-            )
-            .child(
-                div()
+                    .id("message-input-container")
                     .flex_shrink_0()
                     .w_full()
                     .child(self.message_input.clone()),

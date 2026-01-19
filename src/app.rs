@@ -156,19 +156,16 @@ impl Render for ChatApp {
                     // Right: Main chat area
                     .child(
                         v_flex()
+                            .id("main-content")
                             .flex_1()
                             .h_full()
-                            .min_h_0() // Critical for scroll to work
+                            .min_w_0()
+                            .min_h_0()
                             .overflow_hidden()
+                            // Model selector header (fixed height)
                             .child(self.model_selector.clone())
-                            .child(
-                                div()
-                                    .flex_1()
-                                    .w_full()
-                                    .min_h_0()
-                                    .overflow_hidden()
-                                    .child(self.chat_view.clone()),
-                            ),
+                            // Chat view fills remaining space
+                            .child(self.chat_view.clone()),
                     ),
             )
             // Absolutely positioned toolbar buttons (fixed position regardless of sidebar state)

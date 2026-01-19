@@ -11,7 +11,8 @@ use gpui_component::{
     button::{Button, ButtonVariants},
     h_flex,
     label::Label,
-    menu::{DropdownMenu, PopupMenuItem},
+    popover::Popover,
+    v_flex,
 };
 use gpui_tokio_bridge::Tokio;
 
@@ -31,6 +32,8 @@ pub struct ModelSelector {
     cached_models: HashMap<String, Vec<Model>>,
     /// Whether we're currently fetching models
     is_fetching: bool,
+    /// Currently hovered model for details panel
+    hovered_model: Option<Model>,
 }
 
 impl EventEmitter<ModelSelectorChangedEvent> for ModelSelector {}
@@ -41,6 +44,7 @@ impl ModelSelector {
             sidebar_collapsed: false,
             cached_models: HashMap::new(),
             is_fetching: false,
+            hovered_model: None,
         };
 
         // Pre-populate with static models
@@ -184,7 +188,7 @@ impl ModelSelector {
         };
 
         div()
-            .size_4()
+            .size_6()
             .rounded_sm()
             .bg(bg_color)
             .flex()
@@ -196,6 +200,152 @@ impl ModelSelector {
                     .font_weight(FontWeight::BOLD)
                     .text_color(white()),
             )
+    }
+
+    /// Format a number with K/M suffix
+    fn format_number(n: u32) -> String {
+        if n >= 1_000_000 {
+            format!("{}M", n / 1_000_000)
+        } else if n >= 1_000 {
+            format!("{}K", n / 1_000)
+        } else {
+            n.to_string()
+        }
+    }
+
+    /// Render the model details panel
+    fn render_model_details(model: &Model, cx: &App) -> impl IntoElement {
+        let theme = cx.theme();
+
+        v_flex()
+            .w(px(280.))
+            .p_3()
+            .gap_3()
+            .border_l_1()
+            .border_color(theme.border)
+            .bg(theme.popover)
+            // Header with model name
+            .child(
+                v_flex()
+                    .gap_1()
+                    .child(
+                        Label::new(model.name.clone())
+                            .text_base()
+                            .font_weight(FontWeight::SEMIBOLD),
+                    )
+                    .child(
+                        div()
+                            .px_2()
+                            .py_0p5()
+                            .rounded_sm()
+                            .bg(theme.muted)
+                            .child(
+                                Label::new(model.id.clone())
+                                    .text_xs()
+                                    .text_color(theme.muted_foreground),
+                            ),
+                    ),
+            )
+            // Description
+            .when(model.description.is_some(), |el| {
+                el.child(
+                    Label::new(model.description.clone().unwrap_or_default())
+                        .text_sm()
+                        .text_color(theme.muted_foreground),
+                )
+            })
+            // Pricing
+            .when(
+                model.input_price_per_million.is_some() || model.output_price_per_million.is_some(),
+                |el| {
+                    el.child(
+                        v_flex()
+                            .gap_1()
+                            .when(model.input_price_per_million.is_some(), |el| {
+                                let price = model.input_price_per_million.unwrap();
+                                el.child(
+                                    h_flex()
+                                        .gap_1()
+                                        .child(Label::new("Input:").text_sm())
+                                        .child(
+                                            Label::new(format!("${:.2}/M tokens", price))
+                                                .text_sm()
+                                                .font_weight(FontWeight::MEDIUM),
+                                        ),
+                                )
+                            })
+                            .when(model.output_price_per_million.is_some(), |el| {
+                                let price = model.output_price_per_million.unwrap();
+                                el.child(
+                                    h_flex()
+                                        .gap_1()
+                                        .child(Label::new("Output:").text_sm())
+                                        .child(
+                                            Label::new(format!("${:.2}/M tokens", price))
+                                                .text_sm()
+                                                .font_weight(FontWeight::MEDIUM),
+                                        ),
+                                )
+                            }),
+                    )
+                },
+            )
+            // Context and output lengths
+            .child(
+                v_flex()
+                    .gap_1()
+                    .when(model.context_window.is_some(), |el| {
+                        let ctx = model.context_window.unwrap();
+                        el.child(
+                            h_flex()
+                                .gap_1()
+                                .child(Label::new("Context length:").text_sm())
+                                .child(
+                                    Label::new(Self::format_number(ctx))
+                                        .text_sm()
+                                        .font_weight(FontWeight::MEDIUM),
+                                ),
+                        )
+                    })
+                    .when(model.max_output_tokens.is_some(), |el| {
+                        let max_out = model.max_output_tokens.unwrap();
+                        el.child(
+                            h_flex()
+                                .gap_1()
+                                .child(Label::new("Max output length:").text_sm())
+                                .child(
+                                    Label::new(Self::format_number(max_out))
+                                        .text_sm()
+                                        .font_weight(FontWeight::MEDIUM),
+                                ),
+                        )
+                    }),
+            )
+            // Capabilities
+            .when(model.supports_vision || model.supports_tools, |el| {
+                el.child(
+                    h_flex()
+                        .gap_2()
+                        .when(model.supports_vision, |el| {
+                            el.child(
+                                h_flex()
+                                    .gap_1()
+                                    .items_center()
+                                    .child(Icon::new(IconName::Eye).size_5().text_color(theme.muted_foreground))
+                                    .child(Label::new("Vision").text_xs().text_color(theme.muted_foreground)),
+                            )
+                        })
+                        .when(model.supports_tools, |el| {
+                            el.child(
+                                h_flex()
+                                    .gap_1()
+                                    .items_center()
+                                    .child(Icon::new(IconName::Settings2).size_5().text_color(theme.muted_foreground))
+                                    .child(Label::new("Tools").text_xs().text_color(theme.muted_foreground)),
+                            )
+                        }),
+                )
+            })
     }
 }
 
@@ -211,8 +361,12 @@ impl Render for ModelSelector {
         // Collect models data for use in closure
         let cached_models = self.cached_models.clone();
 
+        // Get hovered model for details panel
+        let hovered_model = self.hovered_model.clone();
+
         h_flex()
             .w_full()
+            .flex_shrink_0()
             .h(px(52.))
             .px_4()
             .justify_between()
@@ -226,20 +380,23 @@ impl Render for ModelSelector {
                     .items_center()
                     .when(collapsed, |el| el.pl(px(96.)))
                     .child(
-                        Button::new("model-trigger")
-                            .ghost()
-                            .child(
-                                h_flex()
-                                    .gap_1()
-                                    .items_center()
+                        Popover::new("model-selector-popover")
+                            .trigger(
+                                Button::new("model-trigger")
+                                    .ghost()
                                     .child(
-                                        Label::new(model_name)
-                                            .text_base()
-                                            .font_weight(FontWeight::MEDIUM),
-                                    )
-                                    .child(Icon::new(IconName::ChevronDown).size_4()),
+                                        h_flex()
+                                            .gap_1()
+                                            .items_center()
+                                            .child(
+                                                Label::new(model_name)
+                                                    .text_base()
+                                                    .font_weight(FontWeight::MEDIUM),
+                                            )
+                                            .child(Icon::new(IconName::ChevronDown).size_6()),
+                                    ),
                             )
-                            .dropdown_menu(move |menu, _window, cx| {
+                            .content(move |_state, _window, cx| {
                                 let settings = get_settings(cx);
                                 let current_model = settings
                                     .active_provider()
@@ -254,136 +411,201 @@ impl Render for ModelSelector {
                                     .providers
                                     .iter()
                                     .filter(|p| p.enabled && !p.api_key.is_empty())
+                                    .cloned()
                                     .collect();
 
-                                let mut menu = menu.scrollable(true).max_h(px(400.)).min_w(px(280.));
+                                let theme = cx.theme();
 
-                                for provider in providers {
-                                    // Use cached models if available, otherwise static
-                                    let models = cached_models
-                                        .get(&provider.id)
-                                        .cloned()
-                                        .unwrap_or_else(|| llm::get_models_for_provider(&provider.id));
+                                // Two-panel layout: models list + details
+                                h_flex()
+                                    .bg(theme.popover)
+                                    .rounded_lg()
+                                    .border_1()
+                                    .border_color(theme.border)
+                                    .shadow_lg()
+                                    .max_h(px(400.))
+                                    .overflow_hidden()
+                                    // Left panel: models list
+                                    .child(
+                                        div()
+                                            .id("model-list")
+                                            .w(px(280.))
+                                            .h_full()
+                                            .min_h_0()
+                                            .flex()
+                                            .flex_col()
+                                            .overflow_y_scroll()
+                                            .py_1()
+                                            .children(providers.iter().flat_map(|provider| {
+                                                let models = cached_models
+                                                    .get(&provider.id)
+                                                    .cloned()
+                                                    .unwrap_or_else(|| {
+                                                        llm::get_models_for_provider(&provider.id)
+                                                    });
 
-                                    let provider_id = provider.id.clone();
-                                    let provider_name = provider.name.clone();
+                                                let provider_id = provider.id.clone();
+                                                let provider_name_display = provider.name.clone();
 
-                                    // Add provider header (non-clickable label)
-                                    menu = menu.item(
-                                        PopupMenuItem::element({
-                                            let provider_id = provider_id.clone();
-                                            move |_window, cx| {
-                                                h_flex()
-                                                    .gap_2()
-                                                    .items_center()
-                                                    .child(Self::render_provider_icon(&provider_id))
-                                                    .child(
-                                                        Label::new(provider_name.clone())
-                                                            .text_sm()
-                                                            .font_weight(FontWeight::SEMIBOLD)
-                                                            .text_color(cx.theme().foreground),
-                                                    )
-                                            }
-                                        })
-                                        .disabled(true),
-                                    );
-
-                                    // Add models for this provider
-                                    for model in models {
-                                        let model_id = model.id.clone();
-                                        let model_name = model.name.clone();
-                                        let provider_id_for_click = provider.id.clone();
-                                        let entity_clone = entity.clone();
-
-                                        let is_selected =
-                                            current_provider_id == provider.id && current_model == model_id;
-
-                                        menu = menu.item(
-                                            PopupMenuItem::element({
-                                                let model_name = model_name.clone();
-                                                let supports_vision = model.supports_vision;
-                                                let supports_tools = model.supports_tools;
-                                                move |_window, cx| {
+                                                // Provider header + models
+                                                std::iter::once(
+                                                    // Provider header
                                                     h_flex()
-                                                        .w_full()
+                                                        .px_3()
+                                                        .py_2()
                                                         .gap_2()
                                                         .items_center()
-                                                        .justify_between()
+                                                        .child(Self::render_provider_icon(&provider_id))
                                                         .child(
-                                                            h_flex()
-                                                                .gap_2()
-                                                                .items_center()
-                                                                .pl_5()
-                                                                .child(
-                                                                    Label::new(model_name.clone())
-                                                                        .text_sm(),
-                                                                ),
+                                                            Label::new(provider_name_display)
+                                                                .text_sm()
+                                                                .font_weight(FontWeight::SEMIBOLD)
+                                                                .text_color(theme.foreground),
                                                         )
-                                                        .child(
-                                                            h_flex()
-                                                                .gap_1()
-                                                                .items_center()
-                                                                .when(is_selected, |el| {
-                                                                    el.child(
-                                                                        Icon::new(IconName::Check)
-                                                                            .size_4()
-                                                                            .text_color(cx.theme().accent),
-                                                                    )
-                                                                })
-                                                                .when(supports_vision, |el| {
-                                                                    el.child(
-                                                                        Icon::new(IconName::Eye)
-                                                                            .size_3()
-                                                                            .text_color(
-                                                                                cx.theme().muted_foreground,
+                                                        .into_any_element(),
+                                                )
+                                                .chain(models.into_iter().map({
+                                                    let current_provider_id = current_provider_id.clone();
+                                                    let current_model = current_model.clone();
+                                                    let provider_id = provider_id.clone();
+                                                    let entity = entity.clone();
+                                                    move |model| {
+                                                        let model_id = model.id.clone();
+                                                        let model_name = model.name.clone();
+                                                        let is_selected = current_provider_id == provider_id
+                                                            && current_model == model_id;
+                                                        let supports_vision = model.supports_vision;
+                                                        let supports_tools = model.supports_tools;
+                                                        let model_for_hover = model.clone();
+                                                        let entity_for_hover = entity.clone();
+                                                        let entity_for_click = entity.clone();
+                                                        let provider_id_for_click = provider_id.clone();
+                                                        let model_id_for_click = model_id.clone();
+
+                                                        div()
+                                                            .id(SharedString::from(format!(
+                                                                "model-item-{}",
+                                                                model_id
+                                                            )))
+                                                            .w_full()
+                                                            .px_3()
+                                                            .py_1p5()
+                                                            .cursor_pointer()
+                                                            .rounded_sm()
+                                                            .hover(|s| s.bg(theme.list_active))
+                                                            .on_mouse_move({
+                                                                let model = model_for_hover.clone();
+                                                                let entity = entity_for_hover.clone();
+                                                                move |_ev, _window, cx| {
+                                                                    let _ = entity
+                                                                        .update(cx, |this: &mut ModelSelector, cx| {
+                                                                            if this.hovered_model.as_ref().map(|m| &m.id) != Some(&model.id) {
+                                                                                this.hovered_model =
+                                                                                    Some(model.clone());
+                                                                                cx.notify();
+                                                                            }
+                                                                        });
+                                                                }
+                                                            })
+                                                            .on_click({
+                                                                let provider_id = provider_id_for_click;
+                                                                let model_id = model_id_for_click;
+                                                                let entity = entity_for_click;
+                                                                move |_ev, _window, cx| {
+                                                                    // Update settings
+                                                                    update_settings(cx, |settings| {
+                                                                        settings.active_provider_id =
+                                                                            Some(provider_id.clone());
+                                                                        if let Some(provider) = settings
+                                                                            .providers
+                                                                            .iter_mut()
+                                                                            .find(|p| p.id == provider_id)
+                                                                        {
+                                                                            provider.default_model =
+                                                                                model_id.clone();
+                                                                        }
+                                                                    });
+
+                                                                    // Emit event
+                                                                    let _ = entity
+                                                                        .update(cx, |_this: &mut ModelSelector, cx| {
+                                                                            cx.emit(
+                                                                                ModelSelectorChangedEvent {
+                                                                                    provider_id: provider_id
+                                                                                        .clone(),
+                                                                                    model_id: model_id
+                                                                                        .clone(),
+                                                                                },
+                                                                            );
+                                                                            cx.notify();
+                                                                        });
+                                                                }
+                                                            })
+                                                            .child(
+                                                                h_flex()
+                                                                    .w_full()
+                                                                    .gap_2()
+                                                                    .items_center()
+                                                                    .justify_between()
+                                                                    .child(
+                                                                        h_flex()
+                                                                            .gap_2()
+                                                                            .items_center()
+                                                                            .pl_5()
+                                                                            .child(
+                                                                                Label::new(model_name)
+                                                                                    .text_sm(),
                                                                             ),
                                                                     )
-                                                                })
-                                                                .when(supports_tools, |el| {
-                                                                    el.child(
-                                                                        Icon::new(IconName::Settings2)
-                                                                            .size_3()
-                                                                            .text_color(
-                                                                                cx.theme().muted_foreground,
-                                                                            ),
-                                                                    )
-                                                                }),
-                                                        )
-                                                }
-                                            })
-                                            .on_click({
-                                                let provider_id = provider_id_for_click.clone();
-                                                let model_id = model_id.clone();
-                                                let entity = entity_clone.clone();
-                                                move |_, _window, cx| {
-                                                    // Update settings
-                                                    update_settings(cx, |settings| {
-                                                        settings.active_provider_id =
-                                                            Some(provider_id.clone());
-                                                        if let Some(provider) = settings
-                                                            .providers
-                                                            .iter_mut()
-                                                            .find(|p| p.id == provider_id)
-                                                        {
-                                                            provider.default_model = model_id.clone();
-                                                        }
-                                                    });
-
-                                                    // Emit event
-                                                    entity.update(cx, |_this, cx| {
-                                                        cx.emit(ModelSelectorChangedEvent {
-                                                            provider_id: provider_id.clone(),
-                                                            model_id: model_id.clone(),
-                                                        });
-                                                        cx.notify();
-                                                    });
-                                                }
-                                            }),
-                                        );
-                                    }
-                                }
-
-                                menu
+                                                                    .child(
+                                                                        h_flex()
+                                                                            .gap_1()
+                                                                            .items_center()
+                                                                            .when(is_selected, |el| {
+                                                                                el.child(
+                                                                                    Icon::new(
+                                                                                        IconName::Check,
+                                                                                    )
+                                                                                    .size_6()
+                                                                                    .text_color(
+                                                                                        theme.accent,
+                                                                                    ),
+                                                                                )
+                                                                            })
+                                                                            .when(supports_vision, |el| {
+                                                                                el.child(
+                                                                                    Icon::new(IconName::Eye)
+                                                                                        .size_5()
+                                                                                        .text_color(
+                                                                                            theme
+                                                                                                .muted_foreground,
+                                                                                        ),
+                                                                                )
+                                                                            })
+                                                                            .when(supports_tools, |el| {
+                                                                                el.child(
+                                                                                    Icon::new(
+                                                                                        IconName::Settings2,
+                                                                                    )
+                                                                                    .size_5()
+                                                                                    .text_color(
+                                                                                        theme.muted_foreground,
+                                                                                    ),
+                                                                                )
+                                                                            }),
+                                                                    ),
+                                                            )
+                                                            .into_any_element()
+                                                    }
+                                                }))
+                                            })),
+                                    )
+                                    // Right panel: model details (shown when hovering)
+                                    .when(hovered_model.is_some(), |el| {
+                                        let model = hovered_model.clone().unwrap();
+                                        el.child(Self::render_model_details(&model, cx))
+                                    })
+                                    .into_any_element()
                             }),
                     )
                     .child(

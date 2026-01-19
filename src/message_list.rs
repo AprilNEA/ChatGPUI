@@ -32,17 +32,16 @@ impl Render for MessageList {
     fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
         let messages = self.messages.clone();
 
-        v_flex()
+        div()
             .id("message-list")
-            .size_full()
-            .min_w_0()
+            .flex_1()
+            .w_full()
+            .min_h_0()
             .overflow_x_hidden()
             .overflow_y_scroll()
             .child(
                 v_flex()
                     .w_full()
-                    .min_w_0()
-                    .overflow_hidden()
                     .p_4()
                     .gap_6()
                     .children(messages.into_iter().map(|msg| MessageItem::new(msg))),
@@ -111,7 +110,7 @@ impl RenderOnce for MessageItem {
                             .gap_1()
                             .child(
                                 div()
-                                    .size_2()
+                                    .size_4()
                                     .rounded_full()
                                     .bg(theme.muted_foreground)
                                     .with_animation(
@@ -124,7 +123,7 @@ impl RenderOnce for MessageItem {
                             )
                             .child(
                                 div()
-                                    .size_2()
+                                    .size_4()
                                     .rounded_full()
                                     .bg(theme.muted_foreground)
                                     .with_animation(
@@ -137,7 +136,7 @@ impl RenderOnce for MessageItem {
                             )
                             .child(
                                 div()
-                                    .size_2()
+                                    .size_4()
                                     .rounded_full()
                                     .bg(theme.muted_foreground)
                                     .with_animation(
@@ -163,13 +162,13 @@ impl RenderOnce for MessageItem {
                                     .child(
                                         div()
                                             .flex_shrink_0()
-                                            .size_4()
+                                            .size_6()
                                             .rounded_full()
                                             .bg(theme.danger)
                                             .flex()
                                             .items_center()
                                             .justify_center()
-                                            .text_xs()
+                                            .text_sm()
                                             .text_color(gpui::white())
                                             .child("!"),
                                     )

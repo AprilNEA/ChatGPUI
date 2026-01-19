@@ -4,12 +4,16 @@
 
 mod anthropic;
 mod cache;
+mod google_ai;
 mod model;
+mod openai;
 mod provider;
 
 pub use anthropic::AnthropicProvider;
 pub use cache::{fetch_models_cached, get_model_cache};
+pub use google_ai::GoogleAIProvider;
 pub use model::Model;
+pub use openai::OpenAIProvider;
 pub use provider::{LlmProvider, ProviderConfig, StreamEvent};
 
 use std::sync::Arc;
@@ -38,8 +42,9 @@ pub fn create_provider(provider: &SettingsProvider) -> Result<Arc<dyn LlmProvide
 
     match provider.id.as_str() {
         "anthropic" => Ok(Arc::new(AnthropicProvider::new(config))),
+        "openai" => Ok(Arc::new(OpenAIProvider::new(config))),
+        "google_ai" => Ok(Arc::new(GoogleAIProvider::new(config))),
         // Future providers can be added here:
-        // "openai" => Ok(Arc::new(OpenAIProvider::new(config))),
         // "deepseek" => Ok(Arc::new(DeepSeekProvider::new(config))),
         _ => Err(anyhow!(
             "Provider '{}' is not yet implemented",
@@ -52,6 +57,8 @@ pub fn create_provider(provider: &SettingsProvider) -> Result<Arc<dyn LlmProvide
 pub fn get_models_for_provider(provider_id: &str) -> Vec<Model> {
     match provider_id {
         "anthropic" => AnthropicProvider::available_models(),
+        "openai" => OpenAIProvider::available_models(),
+        "google_ai" => GoogleAIProvider::available_models(),
         // Add other providers here as they are implemented
         _ => vec![],
     }
