@@ -5,7 +5,7 @@ SPDX-License-Identifier: CC-BY-4.0
 
 <div align="center">
 
-<img src="docs/icon.svg" alt="ChatGPUI" width="128" height="128">
+<img src="assets/chatgpui.svg" alt="ChatGPUI" width="128" height="128">
 
 # ChatGPUI
 

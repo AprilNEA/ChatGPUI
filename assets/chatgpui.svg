@@ -1,0 +1,130 @@
+<svg width="140" height="140" viewBox="0 0 140 140" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- 背景主渐变 -->
+    <linearGradient id="bgUltra" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#3E2519"/>
+      <stop offset="25%" style="stop-color:#2F1B11"/>
+      <stop offset="75%" style="stop-color:#22130A"/>
+      <stop offset="100%" style="stop-color:#180D05"/>
+    </linearGradient>
+
+    <!-- 内部渐变叠加 -->
+    <radialGradient id="innerGrad" cx="50%" cy="30%" r="70%">
+      <stop offset="0%" style="stop-color:#5A3020" stop-opacity="0.5"/>
+      <stop offset="100%" style="stop-color:#180D05" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- 顶部高光 -->
+    <radialGradient id="topGlow" cx="50%" cy="0%" r="80%" fx="50%" fy="0%">
+      <stop offset="0%" style="stop-color:#FFFFFF" stop-opacity="0.28"/>
+      <stop offset="40%" style="stop-color:#FFFFFF" stop-opacity="0.06"/>
+      <stop offset="100%" style="stop-color:#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- 边缘高光 -->
+    <linearGradient id="edgeHighlight" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#FFAA44" stop-opacity="0.35"/>
+      <stop offset="30%" style="stop-color:#CE422B" stop-opacity="0.08"/>
+      <stop offset="60%" style="stop-color:#180D05" stop-opacity="0"/>
+    </linearGradient>
+
+    <!-- 用户输入 -->
+    <linearGradient id="userBar" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#FF8A65"/>
+      <stop offset="35%" style="stop-color:#FF5722"/>
+      <stop offset="100%" style="stop-color:#BF360C"/>
+    </linearGradient>
+    <linearGradient id="userBarH" x1="100%" y1="0%" x2="0%" y2="0%">
+      <stop offset="0%" style="stop-color:#FFFFFF" stop-opacity="0"/>
+      <stop offset="100%" style="stop-color:#000000" stop-opacity="0.6"/>
+    </linearGradient>
+
+    <!-- AI 光条 1 -->
+    <linearGradient id="aiBar1" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#FFC077"/>
+      <stop offset="40%" style="stop-color:#F07830"/>
+      <stop offset="100%" style="stop-color:#A63E1E"/>
+    </linearGradient>
+    <linearGradient id="aiBar1H" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#000000" stop-opacity="0.5"/>
+      <stop offset="100%" style="stop-color:#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+
+    <!-- AI 光条 2 -->
+    <linearGradient id="aiBar2" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#E8A050"/>
+      <stop offset="40%" style="stop-color:#D06828"/>
+      <stop offset="100%" style="stop-color:#8B3A18"/>
+    </linearGradient>
+    <linearGradient id="aiBar2H" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#000000" stop-opacity="0.45"/>
+      <stop offset="100%" style="stop-color:#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+
+    <!-- AI 光条 3 -->
+    <linearGradient id="aiBar3" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#C08045"/>
+      <stop offset="40%" style="stop-color:#A05020"/>
+      <stop offset="100%" style="stop-color:#602810"/>
+    </linearGradient>
+    <linearGradient id="aiBar3H" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#000000" stop-opacity="0.4"/>
+      <stop offset="100%" style="stop-color:#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+
+    <!--
+      Apple-style squircle (superellipse n≈4)
+      80% rule: 112x112 content in 140x140 canvas
+      All edges curve slightly outward for "pillowy" look
+    -->
+    <path id="iconShape" d="
+      M 40,14
+      Q 70,13 100,14
+      C 115,14 126,25 126,40
+      Q 127,70 126,100
+      C 126,115 115,126 100,126
+      Q 70,127 40,126
+      C 25,126 14,115 14,100
+      Q 13,70 14,40
+      C 14,25 25,14 40,14
+      Z"/>
+
+    <clipPath id="bgClip">
+      <use href="#iconShape"/>
+    </clipPath>
+  </defs>
+
+  <!-- 主背景 (Apple continuous corners) -->
+  <use href="#iconShape" fill="url(#bgUltra)"/>
+
+  <!-- 内部光晕 -->
+  <use href="#iconShape" fill="url(#innerGrad)"/>
+
+  <!-- 顶部高光 -->
+  <g clip-path="url(#bgClip)">
+    <rect x="14" y="14" width="112" height="56" fill="url(#topGlow)"/>
+  </g>
+
+  <!-- 边缘描边 -->
+  <use href="#iconShape" fill="none" stroke="url(#edgeHighlight)" stroke-width="0.5"/>
+
+  <!-- 用户消息 (adjusted for 80% rule) -->
+  <rect x="58" y="35" width="47" height="11" rx="5.5" fill="url(#userBar)"/>
+  <rect x="58" y="35" width="47" height="11" rx="5.5" fill="url(#userBarH)"/>
+
+  <!-- AI 回复 1 -->
+  <rect x="35" y="55" width="56" height="11" rx="5.5" fill="url(#aiBar1)"/>
+  <rect x="35" y="55" width="56" height="11" rx="5.5" fill="url(#aiBar1H)"/>
+
+  <!-- AI 回复 2 -->
+  <rect x="35" y="74" width="71" height="11" rx="5.5" fill="url(#aiBar2)"/>
+  <rect x="35" y="74" width="71" height="11" rx="5.5" fill="url(#aiBar2H)"/>
+
+  <!-- AI 回复 3 -->
+  <rect x="35" y="93" width="39" height="11" rx="5.5" fill="url(#aiBar3)"/>
+  <rect x="35" y="93" width="39" height="11" rx="5.5" fill="url(#aiBar3H)"/>
+
+  <!-- 生成中光点 -->
+  <circle cx="84" cy="98.5" r="4.5" fill="#FFB347"/>
+  <circle cx="82.5" cy="97" r="1.6" fill="#FFFFFF" opacity="0.75"/>
+</svg>
