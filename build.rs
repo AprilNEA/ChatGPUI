@@ -28,11 +28,8 @@ fn main() {
     println!("cargo:rustc-env=APP_IDENTIFIER={}", identifier);
     println!("cargo:rerun-if-changed=Cargo.toml");
 
-    // Build shadow-rs
-    // In debug mode, use fixed timestamp to enable incremental compilation
-    if std::env::var("PROFILE").unwrap_or_default() == "debug" {
-        // SAFETY: build.rs runs single-threaded before the main program
-        unsafe { std::env::set_var("SOURCE_DATE_EPOCH", "0") };
+    // Build shadow-rs only in release mode to enable incremental compilation in debug
+    if std::env::var("PROFILE").unwrap_or_default() != "debug" {
+        ShadowBuilder::builder().build().unwrap();
     }
-    ShadowBuilder::builder().build().unwrap();
 }
