@@ -42,7 +42,8 @@ const ESTIMATED_CHAR_WIDTH: f32 = 7.0;
 const CODE_BLOCK_EXTRA_HEIGHT: Pixels = px(56.);
 // Code block uses text_sm which is ~14px line height
 const CODE_LINE_HEIGHT: Pixels = px(16.);
-const WIDTH_CHANGE_EPSILON: f32 = 1.0;
+// Larger epsilon to avoid frequent rebuilds during sidebar animation
+const WIDTH_CHANGE_EPSILON: f32 = 20.0;
 const SCROLL_CHANGE_EPSILON: f32 = 1.0;
 const REMEASURE_INTERVAL_MS: u64 = 250;
 
@@ -142,7 +143,7 @@ impl MessageList {
     }
 
     /// Set historical messages (non-streaming).
-    pub fn set_messages(&mut self, messages: Vec<Message>, cx: &mut Context<Self>) {
+    pub fn set_messages(&mut self, messages: Vec<Arc<Message>>, cx: &mut Context<Self>) {
         // Split streaming and history messages.
         let (streaming, history): (Vec<_>, Vec<_>) = messages
             .into_iter()
@@ -158,7 +159,7 @@ impl MessageList {
             let item = if let Some(existing) = self.message_index.get(&message_id) {
                 existing.clone()
             } else {
-                cx.new(|_cx| MessageItem::from_arc(Arc::new(message)))
+                cx.new(|_cx| MessageItem::from_arc(message.clone()))
             };
             next_index.insert(message_id, item.clone());
             next_items.push(item);
@@ -168,10 +169,10 @@ impl MessageList {
         self.message_items = next_items;
 
         // Store streaming message separately.
-        self.streaming_item = streaming
-            .into_iter()
-            .next()
-            .map(|message| cx.new(|_cx| MessageItem::from_streaming(message)));
+        self.streaming_item = streaming.into_iter().next().map(|message| {
+            let message = (*message).clone();
+            cx.new(|_cx| MessageItem::from_streaming(message))
+        });
 
         self.rebuild_virtual_items();
         self.rebuild_item_sizes(cx);
@@ -271,9 +272,17 @@ impl MessageList {
             (f32::from(prev) - f32::from(content_width)).abs() > WIDTH_CHANGE_EPSILON
         });
         if width_changed {
+            let old_width = self.content_width;
             self.content_width = Some(content_width);
-            for entry in self.size_cache.values_mut() {
-                entry.measured = false;
+            // Only invalidate measurements for significant width changes (not animation)
+            // Small changes during animation can use existing measurements
+            let significant_change = old_width.map_or(true, |prev| {
+                (f32::from(prev) - f32::from(content_width)).abs() > 100.0
+            });
+            if significant_change {
+                for entry in self.size_cache.values_mut() {
+                    entry.measured = false;
+                }
             }
             self.rebuild_item_sizes(cx);
             cx.notify();

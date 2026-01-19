@@ -155,6 +155,18 @@ error.stream_error:
   en: "Stream error"
   zh-CN: "流错误"
 
+toast.stream_complete:
+  en: "Reply finished"
+  zh-CN: "回复完成"
+
+toast.stream_failed:
+  en: "Reply failed"
+  zh-CN: "回复失败"
+
+toast.conversation_fallback:
+  en: "Conversation"
+  zh-CN: "对话"
+
 model_selector.search_placeholder:
   en: "Search models"
   zh-CN: "搜索模型"

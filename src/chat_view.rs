@@ -29,8 +29,27 @@ pub struct ConversationUpdatedEvent {
     pub conversation_id: Uuid,
 }
 
+/// Event emitted when a background stream finishes.
+pub struct BackgroundStreamFinishedEvent {
+    pub conversation_id: Uuid,
+    pub error: Option<String>,
+}
+
+struct ActiveStream {
+    message_id: Uuid,
+    conversation_id: Option<Uuid>,
+    content: String,
+}
+
+struct PendingStreamResult {
+    message_id: Uuid,
+    content: String,
+    error: Option<String>,
+    ui_applied: bool,
+}
+
 pub struct ChatView {
-    messages: Vec<Message>,
+    messages: Vec<Arc<Message>>,
     message_list: Entity<MessageList>,
     message_input: Entity<MessageInput>,
     llm_provider: Option<Arc<dyn LlmProvider>>,
@@ -42,11 +61,12 @@ pub struct ChatView {
     debounce_task: Option<Task<()>>,
     /// Buffered streaming content accumulated during the debounce window.
     pending_stream_chunk: String,
-    /// Current streaming message id for persistence.
-    streaming_message_id: Option<Uuid>,
+    active_stream: Option<ActiveStream>,
+    pending_stream_result: Option<PendingStreamResult>,
 }
 
 impl EventEmitter<ConversationUpdatedEvent> for ChatView {}
+impl EventEmitter<BackgroundStreamFinishedEvent> for ChatView {}
 
 impl ChatView {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
@@ -79,7 +99,7 @@ impl ChatView {
         );
 
         let mut messages = Vec::new();
-        messages.push(Message::system("You are a helpful assistant."));
+        messages.push(Arc::new(Message::system("You are a helpful assistant.")));
 
         Self {
             messages,
@@ -92,7 +112,8 @@ impl ChatView {
             _subscription,
             debounce_task: None,
             pending_stream_chunk: String::new(),
-            streaming_message_id: None,
+            active_stream: None,
+            pending_stream_result: None,
         }
     }
 
@@ -100,9 +121,9 @@ impl ChatView {
     pub fn new_chat(&mut self, cx: &mut Context<Self>) {
         self.messages.clear();
         self.messages
-            .push(Message::system("You are a helpful assistant."));
+            .push(Arc::new(Message::system("You are a helpful assistant.")));
         self.current_conversation_id = None;
-        self.streaming_message_id = None;
+        self.clear_streaming_ui_buffer();
         self.update_message_list(cx);
     }
 
@@ -111,7 +132,8 @@ impl ChatView {
         self.current_conversation_id = Some(conversation_id);
         self.messages.clear();
         self.messages
-            .push(Message::system("You are a helpful assistant."));
+            .push(Arc::new(Message::system("You are a helpful assistant.")));
+        self.clear_streaming_ui_buffer();
 
         let db = database::get_db(cx).clone();
         let (tx, rx) = async_channel::unbounded();
@@ -177,14 +199,14 @@ impl ChatView {
                                     MessageStatus::Error(msg.error_message.unwrap_or_default())
                                 }
                             };
-                            this.messages.push(Message {
+                            this.messages.push(Arc::new(Message {
                                 id: msg.id,
                                 role,
                                 content: msg.content,
                                 attachments,
                                 status,
                                 created_at: msg.created_at,
-                            });
+                            }));
                         }
                         this.update_message_list(cx);
                     });
@@ -210,7 +232,7 @@ impl ChatView {
         } else {
             Message::user_with_attachments(&content, attachments.clone())
         };
-        self.messages.push(user_message.clone());
+        self.messages.push(Arc::new(user_message.clone()));
         self.update_message_list(cx);
 
         // Create conversation if this is the first message
@@ -348,7 +370,15 @@ impl ChatView {
             if let Ok(conversation_id) = rx.recv().await {
                 let _ = cx.update(|app| {
                     let _ = this.update(app, |this, cx| {
-                        this.current_conversation_id = Some(conversation_id);
+                        if this.current_conversation_id.is_none() {
+                            this.current_conversation_id = Some(conversation_id);
+                        }
+                        if let Some(stream) = this.active_stream.as_mut() {
+                            if stream.conversation_id.is_none() {
+                                stream.conversation_id = Some(conversation_id);
+                            }
+                        }
+                        this.finalize_pending_stream(conversation_id, cx);
                         cx.emit(ConversationUpdatedEvent { conversation_id });
                     });
                 });
@@ -367,7 +397,17 @@ impl ChatView {
         let Some(conversation_id) = self.current_conversation_id else {
             return;
         };
+        self.save_message_to_db_for(conversation_id, message_id, role, content, cx);
+    }
 
+    fn save_message_to_db_for(
+        &self,
+        conversation_id: Uuid,
+        message_id: Uuid,
+        role: Role,
+        content: String,
+        cx: &mut Context<Self>,
+    ) {
         let db = database::get_db(cx).clone();
         let db_role = match role {
             Role::System => db_message::MessageRole::System,
@@ -399,14 +439,14 @@ impl ChatView {
         }
 
         let Some(provider) = self.llm_provider.clone() else {
-            self.messages.push(Message {
+            self.messages.push(Arc::new(Message {
                 id: Uuid::now_v7(),
                 role: Role::Assistant,
                 content: "Error: No LLM provider configured. Please go to Settings (⌘,) to set up a provider.".to_string(),
                 attachments: Vec::new(),
                 status: MessageStatus::Error("Provider not configured".to_string()),
                 created_at: chrono::Utc::now(),
-            });
+            }));
             self.update_message_list(cx);
             return;
         };
@@ -415,10 +455,17 @@ impl ChatView {
         self.message_input.update(cx, |input, cx| {
             input.set_loading(true, cx);
         });
+        self.debounce_task = None;
+        self.pending_stream_chunk.clear();
+        self.pending_stream_result = None;
 
         // Start streaming message (handled separately in MessageList).
         let streaming_message = Message::assistant_streaming();
-        self.streaming_message_id = Some(streaming_message.id);
+        self.active_stream = Some(ActiveStream {
+            message_id: streaming_message.id,
+            conversation_id: self.current_conversation_id,
+            content: String::new(),
+        });
         self.message_list.update(cx, |list, cx| {
             list.start_streaming(streaming_message, cx);
         });
@@ -428,7 +475,7 @@ impl ChatView {
             .iter()
             .filter(|m| !matches!(m.status, MessageStatus::Streaming))
             .filter(|m| m.role != Role::System || !m.content.is_empty())
-            .map(|m| m.into())
+            .map(|m| m.as_ref().into())
             .collect();
 
         let (tx, rx) = async_channel::unbounded();
@@ -444,44 +491,27 @@ impl ChatView {
 
         // Process stream events on GPUI
         cx.spawn(async move |this, cx| {
-            // Accumulate content for final persistence.
-            let mut accumulated_content = String::new();
-
             while let Ok(event) = rx.recv().await {
                 match event {
                     StreamEvent::Delta(content) => {
-                        accumulated_content.push_str(&content);
                         let _ = cx.update(|app| {
                             let _ = this.update(app, |this, cx| {
-                                this.pending_stream_chunk.push_str(&content);
-                                // Debounce: batch updates into MessageList.
-                                this.schedule_debounced_update(cx);
+                                if let Some(stream) = this.active_stream.as_mut() {
+                                    stream.content.push_str(&content);
+                                }
+                                if this.stream_is_current() {
+                                    this.pending_stream_chunk.push_str(&content);
+                                    // Debounce: batch updates into MessageList.
+                                    this.schedule_debounced_update(cx);
+                                }
                             });
                         });
                     }
                     StreamEvent::Done => {
-                        let content = accumulated_content.clone();
                         let _ = cx.update(|app| {
                             let _ = this.update(app, |this, cx| {
-                                let message_id = this
-                                    .streaming_message_id
-                                    .take()
-                                    .unwrap_or_else(Uuid::now_v7);
                                 this.flush_pending_stream_chunk(cx);
-                                // Finish streaming message.
-                                this.message_list.update(cx, |list, cx| {
-                                    list.finish_streaming(cx);
-                                });
-                                // Persist to local list (used for future API requests).
-                                this.messages.push(Message {
-                                    id: message_id,
-                                    role: Role::Assistant,
-                                    content: content.clone(),
-                                    attachments: Vec::new(),
-                                    status: MessageStatus::Done,
-                                    created_at: chrono::Utc::now(),
-                                });
-                                this.finish_generating_with_content(message_id, content, cx);
+                                this.finish_active_stream(None, cx);
                             });
                         });
                         break;
@@ -490,11 +520,7 @@ impl ChatView {
                         let _ = cx.update(|app| {
                             let _ = this.update(app, |this, cx| {
                                 this.flush_pending_stream_chunk(cx);
-                                this.message_list.update(cx, |list, cx| {
-                                    list.set_streaming_error(&err, cx);
-                                });
-                                this.streaming_message_id = None;
-                                this.finish_generating(cx);
+                                this.finish_active_stream(Some(err), cx);
                             });
                         });
                         break;
@@ -513,12 +539,13 @@ impl ChatView {
         // Clear debounce task.
         self.debounce_task = None;
         self.pending_stream_chunk.clear();
-        self.streaming_message_id = None;
+        self.active_stream = None;
         cx.notify();
     }
 
-    fn finish_generating_with_content(
+    fn finish_generating_with_content_for(
         &mut self,
+        conversation_id: Uuid,
         message_id: Uuid,
         content: String,
         cx: &mut Context<Self>,
@@ -531,12 +558,181 @@ impl ChatView {
         // Clear debounce task.
         self.debounce_task = None;
         self.pending_stream_chunk.clear();
-        self.streaming_message_id = None;
+        self.active_stream = None;
 
         // Save assistant message to database
-        self.save_message_to_db(message_id, Role::Assistant, content, cx);
+        self.save_message_to_db_for(conversation_id, message_id, Role::Assistant, content, cx);
 
         cx.notify();
+    }
+
+    fn is_current_conversation(&self, conversation_id: Option<Uuid>) -> bool {
+        match (conversation_id, self.current_conversation_id) {
+            (None, None) => true,
+            (Some(left), Some(right)) => left == right,
+            _ => false,
+        }
+    }
+
+    fn stream_is_current(&self) -> bool {
+        self.active_stream
+            .as_ref()
+            .is_some_and(|stream| self.is_current_conversation(stream.conversation_id))
+    }
+
+    fn clear_streaming_ui_buffer(&mut self) {
+        self.pending_stream_chunk.clear();
+        self.debounce_task = None;
+    }
+
+    fn sync_streaming_ui(&mut self, cx: &mut Context<Self>) {
+        if !self.stream_is_current() {
+            return;
+        }
+
+        let Some(stream) = &self.active_stream else {
+            return;
+        };
+
+        let streaming_message = Message {
+            id: stream.message_id,
+            role: Role::Assistant,
+            content: stream.content.clone(),
+            attachments: Vec::new(),
+            status: MessageStatus::Streaming,
+            created_at: chrono::Utc::now(),
+        };
+
+        self.message_list.update(cx, |list, cx| {
+            list.start_streaming(streaming_message, cx);
+        });
+    }
+
+    fn complete_stream_result(
+        &mut self,
+        conversation_id: Uuid,
+        message_id: Uuid,
+        content: String,
+        error: Option<String>,
+        cx: &mut Context<Self>,
+    ) {
+        let is_current = self.current_conversation_id == Some(conversation_id);
+
+        if let Some(error) = error {
+            if is_current {
+                self.message_list.update(cx, |list, cx| {
+                    list.set_streaming_error(&error, cx);
+                });
+            }
+            self.finish_generating(cx);
+            if !is_current {
+                cx.emit(BackgroundStreamFinishedEvent {
+                    conversation_id,
+                    error: Some(error),
+                });
+            }
+            return;
+        }
+
+        if is_current {
+            self.message_list.update(cx, |list, cx| {
+                list.finish_streaming(cx);
+            });
+            self.messages.push(Arc::new(Message {
+                id: message_id,
+                role: Role::Assistant,
+                content: content.clone(),
+                attachments: Vec::new(),
+                status: MessageStatus::Done,
+                created_at: chrono::Utc::now(),
+            }));
+        }
+
+        self.finish_generating_with_content_for(conversation_id, message_id, content, cx);
+
+        if !is_current {
+            cx.emit(BackgroundStreamFinishedEvent {
+                conversation_id,
+                error: None,
+            });
+        }
+    }
+
+    fn finish_active_stream(&mut self, error: Option<String>, cx: &mut Context<Self>) {
+        let Some(stream) = self.active_stream.take() else {
+            return;
+        };
+
+        let conversation_id = stream.conversation_id;
+        let message_id = stream.message_id;
+        let content = stream.content;
+
+        let is_current = self.is_current_conversation(conversation_id);
+
+        if let Some(conversation_id) = conversation_id {
+            self.complete_stream_result(
+                conversation_id,
+                message_id,
+                content,
+                error,
+                cx,
+            );
+            return;
+        }
+
+        if let Some(error) = error.clone() {
+            if is_current {
+                self.message_list.update(cx, |list, cx| {
+                    list.set_streaming_error(&error, cx);
+                });
+            }
+        } else if is_current {
+            self.message_list.update(cx, |list, cx| {
+                list.finish_streaming(cx);
+            });
+            self.messages.push(Arc::new(Message {
+                id: message_id,
+                role: Role::Assistant,
+                content: content.clone(),
+                attachments: Vec::new(),
+                status: MessageStatus::Done,
+                created_at: chrono::Utc::now(),
+            }));
+        }
+
+        self.pending_stream_result = Some(PendingStreamResult {
+            message_id,
+            content,
+            error,
+            ui_applied: is_current,
+        });
+        self.finish_generating(cx);
+    }
+
+    fn finalize_pending_stream(&mut self, conversation_id: Uuid, cx: &mut Context<Self>) {
+        let Some(result) = self.pending_stream_result.take() else {
+            return;
+        };
+
+        if result.ui_applied {
+            if result.error.is_none() {
+                self.finish_generating_with_content_for(
+                    conversation_id,
+                    result.message_id,
+                    result.content,
+                    cx,
+                );
+            }
+            return;
+        }
+
+        self.complete_stream_result(
+            conversation_id,
+            result.message_id,
+            result.content,
+            result.error,
+            cx,
+        );
     }
 
     /// Reload LLM provider from settings (called when provider/model changes)
@@ -571,7 +767,7 @@ impl ChatView {
     }
 
     fn update_message_list(&mut self, cx: &mut Context<Self>) {
-        let messages: Vec<Message> = self
+        let messages: Vec<Arc<Message>> = self
             .messages
             .iter()
             .filter(|m| m.role != Role::System)
@@ -581,6 +777,7 @@ impl ChatView {
         self.message_list.update(cx, |list, cx| {
             list.set_messages(messages, cx);
         });
+        self.sync_streaming_ui(cx);
         cx.notify();
     }
 
@@ -608,6 +805,11 @@ impl ChatView {
 
     fn flush_pending_stream_chunk(&mut self, cx: &mut Context<Self>) {
         if self.pending_stream_chunk.is_empty() {
+            return;
+        }
+
+        if !self.stream_is_current() {
+            self.pending_stream_chunk.clear();
             return;
         }
 

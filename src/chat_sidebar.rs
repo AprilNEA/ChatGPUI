@@ -192,6 +192,13 @@ impl ChatSidebar {
         self.load_conversations(cx);
     }
 
+    pub fn conversation_title(&self, id: Uuid) -> Option<String> {
+        self.conversations
+            .iter()
+            .find(|conv| conv.id == id)
+            .map(|conv| conv.title.clone())
+    }
+
     /// Select a conversation
     pub fn select_conversation(&mut self, id: Option<Uuid>, cx: &mut Context<Self>) {
         self.selected_conversation = id;

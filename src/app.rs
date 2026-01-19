@@ -10,11 +10,12 @@ use gpui_component::{
     ActiveTheme, IconName,
     button::{Button, ButtonVariants},
     h_flex, v_flex,
+    notification::{Notification, NotificationList, NotificationType},
 };
 use gpui_tokio_bridge::Tokio;
 
 use crate::chat_sidebar::{ChatSidebar, ConversationSelectedEvent};
-use crate::chat_view::{ChatView, ConversationUpdatedEvent};
+use crate::chat_view::{BackgroundStreamFinishedEvent, ChatView, ConversationUpdatedEvent};
 use crate::database;
 use crate::model_selector::{ModelSelector, ModelSelectorChangedEvent};
 
@@ -41,6 +42,7 @@ pub struct ChatApp {
     sidebar: Entity<ChatSidebar>,
     model_selector: Entity<ModelSelector>,
     chat_view: Entity<ChatView>,
+    notification_list: Entity<NotificationList>,
     sidebar_collapsed: bool,
     sidebar_width: f32,
     /// Animation trigger counter - increments on each toggle to reset animation
@@ -62,6 +64,7 @@ impl ChatApp {
         let sidebar = cx.new(|cx| ChatSidebar::new(window, cx));
         let model_selector = cx.new(|cx| ModelSelector::new(cx));
         let chat_view = cx.new(|cx| ChatView::new(window, cx));
+        let notification_list = cx.new(|cx| NotificationList::new(window, cx));
 
         let mut subscriptions = Vec::new();
 
@@ -100,10 +103,48 @@ impl ChatApp {
             },
         ));
 
+        // Subscribe to background stream completion for toast notifications
+        subscriptions.push(cx.subscribe_in(
+            &chat_view,
+            window,
+            |this, _, event: &BackgroundStreamFinishedEvent, window, cx| {
+                let conversation_id = event.conversation_id;
+                let title = this
+                    .sidebar
+                    .read(cx)
+                    .conversation_title(conversation_id)
+                    .unwrap_or_else(|| t!("toast.conversation_fallback").to_string());
+                let (type_, message) = match &event.error {
+                    Some(error) => (
+                        NotificationType::Error,
+                        format!("{}: {}", t!("toast.stream_failed"), error),
+                    ),
+                    None => (
+                        NotificationType::Success,
+                        t!("toast.stream_complete").to_string(),
+                    ),
+                };
+                let sidebar = this.sidebar.clone();
+                let notification = Notification::new()
+                    .title(title)
+                    .message(message)
+                    .with_type(type_)
+                    .on_click(move |_event, _window, cx| {
+                        sidebar.update(cx, |sidebar, cx| {
+                            sidebar.select_conversation(Some(conversation_id), cx);
+                        });
+                    });
+                this.notification_list.update(cx, |list, cx| {
+                    list.push(notification, window, cx);
+                });
+            },
+        ));
+
         Self {
             sidebar,
             model_selector,
             chat_view,
+            notification_list,
             sidebar_collapsed: false,
             sidebar_width: SIDEBAR_DEFAULT_WIDTH,
             animation_trigger: 0,
@@ -189,6 +230,7 @@ impl Render for ChatApp {
                             })),
                     ),
             )
+            .child(self.notification_list.clone())
     }
 }
 
