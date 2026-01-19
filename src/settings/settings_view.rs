@@ -222,7 +222,7 @@ impl SettingsView {
                                 h_flex()
                                     .gap_2()
                                     .items_center()
-                                    .child(Icon::new(category.icon()).size_4())
+                                    .child(Icon::new(category.icon()).size_6())
                                     .child(Label::new(category.label())),
                             )
                     }),
@@ -315,10 +315,10 @@ impl SettingsView {
             _ => "•",
         };
         h_flex()
-            .size_5()
+            .size_8()
             .items_center()
             .justify_center()
-            .text_sm()
+            .text_base()
             .child(icon)
     }
 

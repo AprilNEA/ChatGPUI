@@ -1,2 +1,18 @@
 [tools]
 rust = "nightly"
+
+[tasks.clean]
+description = "Clean up PostgreSQL processes, shared memory, and database files"
+run = "./scripts/clean.sh"
+
+[tasks.clean-all]
+description = "Clean up everything including database data (WARNING: deletes all conversations)"
+run = "./scripts/clean-all.sh"
+
+[tasks.dev]
+description = "Run the application in development mode"
+run = "cargo run"
+
+[tasks.build]
+description = "Build the application"
+run = "cargo build --release"

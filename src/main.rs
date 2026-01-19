@@ -10,6 +10,7 @@ extern crate rust_i18n;
 i18n!("locales", fallback = "en");
 
 mod app;
+mod assets;
 mod chat_sidebar;
 mod chat_view;
 mod database;
@@ -22,7 +23,8 @@ mod settings;
 
 use gpui::*;
 use gpui_component::Root;
-use gpui_component_assets::Assets;
+
+use crate::assets::Assets;
 
 use settings::{OpenSettings, open_settings_window};
 
