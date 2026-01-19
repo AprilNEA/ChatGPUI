@@ -34,7 +34,7 @@ jobs:
             runner: macos-14
             arch: arm64
           - target: x86_64-apple-darwin
-            runner: macos-13
+            runner: macos-15
             arch: x64
 
     steps:
