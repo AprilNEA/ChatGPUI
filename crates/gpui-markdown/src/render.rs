@@ -155,6 +155,7 @@ impl RenderOnce for Markdown {
             link_color: self.style.link_color.unwrap_or(theme.link),
             blockquote_border: self.style.blockquote_border.unwrap_or(theme.border),
             muted_foreground: theme.muted_foreground,
+            code_border: theme.border,
         };
 
         #[cfg(feature = "syntax-highlighting")]
@@ -217,6 +218,7 @@ struct ResolvedStyle {
     link_color: Hsla,
     blockquote_border: Hsla,
     muted_foreground: Hsla,
+    code_border: Hsla,
 }
 
 struct RenderContext {
@@ -238,6 +240,10 @@ impl RenderContext {
 
     fn code_block_scroll_id(&self, index: usize) -> ElementId {
         ElementId::from((self.cache_key.clone(), format!("code-block-scroll-{}", index)))
+    }
+
+    fn code_block_copy_id(&self, index: usize) -> ElementId {
+        ElementId::from((self.cache_key.clone(), format!("code-block-copy-{}", index)))
     }
 }
 
@@ -331,30 +337,85 @@ fn render_element(
             #[cfg(not(feature = "syntax-highlighting"))]
             let code_element = render_plain_code(code);
 
-            let lang_label = language.clone();
-            let mut code_block = v_flex()
-                .w_full()
-                .bg(style.code_bg)
-                .text_color(style.code_fg)
-                .rounded_md()
-                .p_3()
-                .text_sm()
-                .font_family("monospace")
-                .id(context.code_block_scroll_id(code_block_index))
-                .overflow_x_scroll()
-                .overflow_y_hidden();
-
-            if let Some(lang) = lang_label {
-                code_block = code_block.child(
-                    div()
-                        .text_xs()
-                        .text_color(style.muted_foreground)
-                        .mb_2()
-                        .child(lang),
-                );
+            let theme = cx.theme();
+            let raw_label = language.as_deref().unwrap_or("text").trim();
+            let mut label = raw_label.to_lowercase();
+            if label.is_empty() {
+                label = "text".to_string();
+            }
+            if matches!(label.as_str(), "ts" | "tsx" | "typescript") {
+                label = "typescript".to_string();
             }
 
-            code_block.child(code_element).into_any_element()
+            let icon_path = match label.as_str() {
+                "typescript" => Some("icons/language/typescript.svg"),
+                _ => None,
+            };
+
+            let mut header_left = h_flex().items_center().gap_2();
+            if let Some(path) = icon_path {
+                header_left = header_left.child(
+                    svg()
+                        .path(path)
+                        .size_4()
+                        .text_color(style.muted_foreground),
+                );
+            }
+            header_left = header_left.child(
+                div()
+                    .text_xs()
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_color(style.muted_foreground)
+                    .child(label),
+            );
+
+            let code_to_copy = code.to_string();
+            let copy_button = div()
+                .id(context.code_block_copy_id(code_block_index))
+                .px_2()
+                .py_1()
+                .rounded_sm()
+                .text_xs()
+                .text_color(style.muted_foreground)
+                .cursor_pointer()
+                .hover(|s| s.bg(style.code_bg))
+                .on_click(move |_ev, _window, cx: &mut App| {
+                    cx.write_to_clipboard(ClipboardItem::new_string(code_to_copy.clone()));
+                })
+                .child("Copy");
+
+            let header = h_flex()
+                .items_center()
+                .justify_between()
+                .px_3()
+                .py_2()
+                .border_b_1()
+                .border_color(style.code_border)
+                .child(header_left)
+                .child(copy_button);
+
+            let code_body = div()
+                .w_full()
+                .px_3()
+                .py_3()
+                .text_size(theme.mono_font_size)
+                .font_family(theme.mono_font_family.clone())
+                .text_color(style.code_fg)
+                .id(context.code_block_scroll_id(code_block_index))
+                .overflow_x_scroll()
+                .overflow_y_hidden()
+                .child(code_element);
+
+            v_flex()
+                .w_full()
+                .bg(style.code_bg)
+                .border_1()
+                .border_color(style.code_border)
+                .rounded_lg()
+                .overflow_hidden()
+                .child(header)
+                .child(code_body)
+                .into_any_element()
         }
 
         MarkdownElement::Blockquote(content) => {

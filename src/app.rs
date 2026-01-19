@@ -5,8 +5,9 @@
 use std::time::Duration;
 
 use gpui::*;
+use gpui::prelude::FluentBuilder;
 use gpui_component::{
-    ActiveTheme, IconName, Sizable,
+    ActiveTheme, IconName,
     button::{Button, ButtonVariants},
     h_flex, v_flex,
 };
@@ -19,8 +20,22 @@ use crate::model_selector::{ModelSelector, ModelSelectorChangedEvent};
 
 // Sidebar constants
 const SIDEBAR_DEFAULT_WIDTH: f32 = 260.0;
-const SIDEBAR_COLLAPSED_WIDTH: f32 = 0.0;
-const SIDEBAR_ANIMATION_DURATION: Duration = Duration::from_millis(200);
+const SIDEBAR_MIN_WIDTH: f32 = 200.0;
+const SIDEBAR_MAX_WIDTH: f32 = 400.0;
+const SIDEBAR_ANIMATION_DURATION: Duration = Duration::from_millis(150);
+
+/// Drag state for sidebar resizing
+#[derive(Clone)]
+struct SidebarResizeDrag;
+
+/// Empty view for drag visual (invisible)
+struct EmptyDragView;
+
+impl Render for EmptyDragView {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        div()
+    }
+}
 
 pub struct ChatApp {
     sidebar: Entity<ChatSidebar>,
@@ -28,6 +43,8 @@ pub struct ChatApp {
     chat_view: Entity<ChatView>,
     sidebar_collapsed: bool,
     sidebar_width: f32,
+    /// Animation trigger counter - increments on each toggle to reset animation
+    animation_trigger: usize,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -89,16 +106,23 @@ impl ChatApp {
             chat_view,
             sidebar_collapsed: false,
             sidebar_width: SIDEBAR_DEFAULT_WIDTH,
+            animation_trigger: 0,
             _subscriptions: subscriptions,
         }
     }
 
     fn toggle_sidebar(&mut self, cx: &mut Context<Self>) {
         self.sidebar_collapsed = !self.sidebar_collapsed;
+        self.animation_trigger += 1;
         let collapsed = self.sidebar_collapsed;
         self.model_selector.update(cx, |selector, cx| {
             selector.set_sidebar_collapsed(collapsed, cx);
         });
+        cx.notify();
+    }
+
+    fn resize_sidebar(&mut self, new_width: f32, cx: &mut Context<Self>) {
+        self.sidebar_width = new_width.clamp(SIDEBAR_MIN_WIDTH, SIDEBAR_MAX_WIDTH);
         cx.notify();
     }
 
@@ -116,8 +140,6 @@ impl Render for ChatApp {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
         let collapsed = self.sidebar_collapsed;
-        let expanded_width = self.sidebar_width;
-        let collapsed_width = SIDEBAR_COLLAPSED_WIDTH;
 
         div()
             .size_full()
@@ -126,34 +148,11 @@ impl Render for ChatApp {
             .child(
                 h_flex()
                     .size_full()
-                    // Left: Chat history sidebar with animation
-                    .child(
-                        div()
-                            .id("sidebar-container")
-                            .h_full()
-                            .flex_shrink_0()
-                            .overflow_hidden()
-                            .child(self.sidebar.clone())
-                            .with_animation(
-                                ElementId::Name(
-                                    format!(
-                                        "sidebar-{}",
-                                        if collapsed { "collapse" } else { "expand" }
-                                    )
-                                    .into(),
-                                ),
-                                Animation::new(SIDEBAR_ANIMATION_DURATION),
-                                move |el, delta| {
-                                    let (start, end) = if collapsed {
-                                        (expanded_width, collapsed_width)
-                                    } else {
-                                        (collapsed_width, expanded_width)
-                                    };
-                                    el.w(px(start + delta * (end - start)))
-                                },
-                            ),
-                    )
-                    // Right: Main chat area
+                    // Animated sidebar container
+                    .child(self.render_sidebar(cx))
+                    // Resize handle (only when expanded)
+                    .when(!collapsed, |el| el.child(self.render_resize_handle(cx)))
+                    // Main content area
                     .child(
                         v_flex()
                             .id("main-content")
@@ -162,9 +161,7 @@ impl Render for ChatApp {
                             .min_w_0()
                             .min_h_0()
                             .overflow_hidden()
-                            // Model selector header (fixed height)
                             .child(self.model_selector.clone())
-                            // Chat view fills remaining space
                             .child(self.chat_view.clone()),
                     ),
             )
@@ -179,7 +176,6 @@ impl Render for ChatApp {
                         Button::new("toggle-sidebar")
                             .icon(IconName::PanelLeft)
                             .ghost()
-                            .xsmall()
                             .on_click(cx.listener(|this, _, _window, cx| {
                                 this.toggle_sidebar(cx);
                             })),
@@ -188,11 +184,62 @@ impl Render for ChatApp {
                         Button::new("new-chat")
                             .icon(IconName::Plus)
                             .ghost()
-                            .xsmall()
                             .on_click(cx.listener(|this, _, _window, cx| {
                                 this.new_chat(cx);
                             })),
                     ),
             )
+    }
+}
+
+impl ChatApp {
+    /// Render sidebar with collapse/expand animation
+    fn render_sidebar(&self, _cx: &Context<Self>) -> impl IntoElement {
+        let collapsed = self.sidebar_collapsed;
+        let expanded_width = self.sidebar_width;
+        let animation_trigger = self.animation_trigger;
+
+        // Animation parameters
+        let (start_width, end_width) = if collapsed {
+            (expanded_width, 0.0)
+        } else {
+            (0.0, expanded_width)
+        };
+
+        div()
+            .id("sidebar-container")
+            .h_full()
+            .flex_shrink_0()
+            .overflow_hidden()
+            .child(self.sidebar.clone())
+            .with_animation(
+                ("sidebar-anim", animation_trigger),
+                Animation::new(SIDEBAR_ANIMATION_DURATION).with_easing(ease_in_out),
+                move |el, delta| {
+                    let width = start_width + (end_width - start_width) * delta;
+                    el.w(px(width))
+                },
+            )
+    }
+
+    /// Render resize handle for dragging sidebar width
+    fn render_resize_handle(&self, cx: &Context<Self>) -> impl IntoElement {
+        let theme = cx.theme();
+
+        div()
+            .id("sidebar-resize-handle")
+            .w(px(1.0))
+            .h_full()
+            .flex_shrink_0()
+            .cursor(CursorStyle::ResizeLeftRight)
+            .bg(theme.border)
+            .hover(|el| el.bg(theme.primary))
+            .on_drag(SidebarResizeDrag, |_, _, _, cx| cx.new(|_| EmptyDragView))
+            .on_drag_move::<SidebarResizeDrag>(cx.listener(
+                |this, event: &DragMoveEvent<SidebarResizeDrag>, _window, cx| {
+                    let new_width: f32 = event.event.position.x.into();
+                    this.resize_sidebar(new_width, cx);
+                },
+            ))
     }
 }

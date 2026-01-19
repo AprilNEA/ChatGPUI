@@ -8,6 +8,9 @@ use rust_embed::RustEmbed;
 #[derive(RustEmbed)]
 #[folder = "assets"]
 #[include = "icons/**/*.svg"]
+#[include = "icons/**/*.png"]
+#[include = "*.svg"]
+#[include = "*.png"]
 pub struct Assets;
 
 impl AssetSource for Assets {
