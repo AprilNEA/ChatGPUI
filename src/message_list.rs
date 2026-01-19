@@ -120,7 +120,6 @@ pub struct MessageList {
     size_cache: HashMap<Uuid, MeasureEntry>,
     content_width: Option<Pixels>,
     last_scroll_offset: Pixels,
-    last_max_offset: Pixels,
 }
 
 impl MessageList {
@@ -137,7 +136,6 @@ impl MessageList {
             size_cache: HashMap::new(),
             content_width: None,
             last_scroll_offset: Pixels::ZERO,
-            last_max_offset: Pixels::ZERO,
         }
     }
 
@@ -177,10 +175,8 @@ impl MessageList {
         self.rebuild_item_sizes(cx);
 
         // If a new message arrives, mark scroll to bottom.
-        if new_message_added || self.streaming_item.is_some() {
-            if self.stick_to_bottom || self.is_near_bottom() {
-                self.pending_scroll_to_bottom = true;
-            }
+        if (new_message_added || self.streaming_item.is_some()) && self.stick_to_bottom {
+            self.pending_scroll_to_bottom = true;
         }
 
         cx.notify();
@@ -232,7 +228,7 @@ impl MessageList {
     /// Start a new streaming message.
     pub fn start_streaming(&mut self, message: Message, cx: &mut Context<Self>) {
         self.streaming_item = Some(cx.new(|_cx| MessageItem::from_streaming(message)));
-        if self.stick_to_bottom || self.is_near_bottom() {
+        if self.stick_to_bottom {
             self.pending_scroll_to_bottom = true;
         }
         self.rebuild_virtual_items();
@@ -273,27 +269,23 @@ impl MessageList {
 
     fn update_scroll_follow(&mut self, auto_scroll: bool) {
         let offset = self.scroll_handle.offset().y;
-        let max_offset = self.scroll_handle.max_offset().height;
+        let offset_delta = f32::from(offset) - f32::from(self.last_scroll_offset);
+        let user_scrolled_up = offset_delta > SCROLL_CHANGE_EPSILON;
+        let user_scrolled_down = offset_delta < -SCROLL_CHANGE_EPSILON;
 
         if !auto_scroll {
             self.stick_to_bottom = false;
         } else if self.pending_scroll_to_bottom {
             self.stick_to_bottom = true;
         } else if self.stick_to_bottom {
-            let offset_delta = (f32::from(offset) - f32::from(self.last_scroll_offset)).abs();
-            let max_delta = (f32::from(max_offset) - f32::from(self.last_max_offset)).abs();
-            if offset_delta > SCROLL_CHANGE_EPSILON
-                && max_delta < SCROLL_CHANGE_EPSILON
-                && !self.is_near_bottom()
-            {
+            if user_scrolled_up {
                 self.stick_to_bottom = false;
             }
-        } else if self.is_near_bottom() {
+        } else if user_scrolled_down && self.is_near_bottom() {
             self.stick_to_bottom = true;
         }
 
         self.last_scroll_offset = offset;
-        self.last_max_offset = max_offset;
     }
 
     fn rebuild_virtual_items(&mut self) {
@@ -491,7 +483,11 @@ impl Render for MessageList {
         self.update_scroll_follow(auto_scroll);
 
         if auto_scroll && (self.stick_to_bottom || self.pending_scroll_to_bottom) {
-            self.scroll_handle.scroll_to_bottom();
+            let item_count = self.virtual_items.len();
+            if item_count > 0 {
+                self.scroll_handle
+                    .scroll_to_item(item_count - 1, ScrollStrategy::Bottom);
+            }
         }
         self.pending_scroll_to_bottom = false;
 
