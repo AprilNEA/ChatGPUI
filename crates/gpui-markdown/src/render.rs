@@ -342,19 +342,16 @@ fn render_element(
             let code_element = render_plain_code(code);
 
             let theme = cx.theme();
+            let is_dark = theme.mode.is_dark();
             let raw_label = language.as_deref().unwrap_or("text").trim();
-            let mut label = raw_label.to_lowercase();
-            if label.is_empty() {
-                label = "text".to_string();
-            }
-            if matches!(label.as_str(), "ts" | "tsx" | "typescript") {
-                label = "typescript".to_string();
-            }
-
-            let icon_path = match label.as_str() {
-                "typescript" => Some("icons/language/typescript.svg"),
-                _ => None,
+            let label = raw_label.to_lowercase();
+            let display_label = if label.is_empty() {
+                "text".to_string()
+            } else {
+                label.clone()
             };
+
+            let icon_path = language_icon(&label, is_dark);
 
             let mut header_left = h_flex().items_center().gap_2();
             if let Some(path) = icon_path {
@@ -366,23 +363,25 @@ fn render_element(
                     .text_xs()
                     .font_weight(FontWeight::MEDIUM)
                     .text_color(style.muted_foreground)
-                    .child(label),
+                    .child(display_label),
             );
 
             let code_to_copy = code.to_string();
             let copy_button = div()
                 .id(context.code_block_copy_id(code_block_index))
-                .px_2()
-                .py_1()
+                .p_1()
                 .rounded_sm()
-                .text_xs()
-                .text_color(style.muted_foreground)
                 .cursor_pointer()
                 .hover(|s| s.bg(style.code_bg))
                 .on_click(move |_ev, _window, cx: &mut App| {
                     cx.write_to_clipboard(ClipboardItem::new_string(code_to_copy.clone()));
                 })
-                .child("Copy");
+                .child(
+                    svg()
+                        .path("icons/copy.svg")
+                        .size_4()
+                        .text_color(style.muted_foreground),
+                );
 
             let header = h_flex()
                 .items_center()
@@ -668,4 +667,86 @@ fn render_inline_children(
             )
         })
         .collect()
+}
+
+/// Get language icon path based on language name and theme
+fn language_icon(language: &str, is_dark: bool) -> Option<&'static str> {
+    match language {
+        // Shell/Terminal
+        "bash" | "sh" | "shell" | "zsh" => Some(if is_dark {
+            "icons/language/bash_dark.svg"
+        } else {
+            "icons/language/bash.svg"
+        }),
+        "powershell" | "ps1" => Some("icons/language/powershell.svg"),
+
+        // C family
+        "c" => Some("icons/language/c.svg"),
+        "cpp" | "c++" | "cxx" | "cc" => Some("icons/language/c-plusplus.svg"),
+        "csharp" | "c#" | "cs" => Some("icons/language/csharp.svg"),
+
+        // Web
+        "javascript" | "js" | "jsx" => Some("icons/language/javascript.svg"),
+        "typescript" | "ts" | "tsx" => Some("icons/language/typescript.svg"),
+        "html" | "htm" => Some("icons/language/html5.svg"),
+        "css" => Some("icons/language/css.svg"),
+        "sass" | "scss" => Some("icons/language/sass.svg"),
+        "graphql" | "gql" => Some("icons/language/graphql.svg"),
+
+        // Systems
+        "rust" | "rs" => Some(if is_dark {
+            "icons/language/rust_dark.svg"
+        } else {
+            "icons/language/rust.svg"
+        }),
+        "go" | "golang" => Some(if is_dark {
+            "icons/language/golang_dark.svg"
+        } else {
+            "icons/language/golang.svg"
+        }),
+        "zig" => Some("icons/language/zig.svg"),
+
+        // JVM
+        "java" => Some("icons/language/java.svg"),
+        "kotlin" | "kt" | "kts" => Some("icons/language/kotlin.svg"),
+        "scala" => Some("icons/language/scala.svg"),
+
+        // Scripting
+        "python" | "py" => Some("icons/language/python.svg"),
+        "ruby" | "rb" => Some("icons/language/ruby.svg"),
+        "lua" => Some("icons/language/lua.svg"),
+        "r" => Some(if is_dark {
+            "icons/language/r_dark.svg"
+        } else {
+            "icons/language/r.svg"
+        }),
+
+        // Mobile
+        "swift" => Some("icons/language/swift.svg"),
+        "dart" => Some("icons/language/dart.svg"),
+
+        // Functional
+        "haskell" | "hs" => Some("icons/language/haskell.svg"),
+        "gleam" => Some("icons/language/gleam.svg"),
+
+        // Data/Config
+        "json" | "jsonc" => Some("icons/language/json.svg"),
+        "markdown" | "md" => Some(if is_dark {
+            "icons/language/markdown-dark.svg"
+        } else {
+            "icons/language/markdown-light.svg"
+        }),
+
+        // Scientific
+        "julia" | "jl" => Some("icons/language/julia.svg"),
+        "matlab" | "m" => Some("icons/language/matlab.svg"),
+        "fortran" | "f90" | "f95" => Some("icons/language/fortran.svg"),
+
+        // Other
+        "cobol" | "cob" => Some("icons/language/cobol.svg"),
+        "solidity" | "sol" => Some("icons/language/solidity.svg"),
+        "terraform" | "tf" | "hcl" => Some("icons/language/terraform.svg"),
+
+        _ => None,
+    }
 }
