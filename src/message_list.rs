@@ -38,8 +38,8 @@ const ERROR_ROW_HEIGHT: Pixels = px(20.);
 const ERROR_ROW_GAP: Pixels = px(8.);
 const ESTIMATED_TEXT_LINE_HEIGHT: Pixels = px(18.);
 const ESTIMATED_CHAR_WIDTH: f32 = 7.0;
-// Code block extra height: p_3 padding (24px) + language label (~20px) + rounded border (~4px)
-const CODE_BLOCK_EXTRA_HEIGHT: Pixels = px(48.);
+// Code block extra height: header (~28px) + vertical padding (~24px) + borders (~4px)
+const CODE_BLOCK_EXTRA_HEIGHT: Pixels = px(56.);
 // Code block uses text_sm which is ~14px line height
 const CODE_LINE_HEIGHT: Pixels = px(16.);
 const WIDTH_CHANGE_EPSILON: f32 = 1.0;
@@ -120,6 +120,7 @@ pub struct MessageList {
     size_cache: HashMap<Uuid, MeasureEntry>,
     content_width: Option<Pixels>,
     last_scroll_offset: Pixels,
+    last_max_offset: Pixels,
 }
 
 impl MessageList {
@@ -136,6 +137,7 @@ impl MessageList {
             size_cache: HashMap::new(),
             content_width: None,
             last_scroll_offset: Pixels::ZERO,
+            last_max_offset: Pixels::ZERO,
         }
     }
 
@@ -175,7 +177,9 @@ impl MessageList {
         self.rebuild_item_sizes(cx);
 
         // If a new message arrives, mark scroll to bottom.
-        if (new_message_added || self.streaming_item.is_some()) && self.stick_to_bottom {
+        if (new_message_added || self.streaming_item.is_some())
+            && (self.stick_to_bottom || self.was_near_bottom())
+        {
             self.pending_scroll_to_bottom = true;
         }
 
@@ -228,7 +232,7 @@ impl MessageList {
     /// Start a new streaming message.
     pub fn start_streaming(&mut self, message: Message, cx: &mut Context<Self>) {
         self.streaming_item = Some(cx.new(|_cx| MessageItem::from_streaming(message)));
-        if self.stick_to_bottom {
+        if self.stick_to_bottom || self.was_near_bottom() {
             self.pending_scroll_to_bottom = true;
         }
         self.rebuild_virtual_items();
@@ -242,6 +246,15 @@ impl MessageList {
             return true;
         }
         let offset = self.scroll_handle.offset().y;
+        (offset + max_offset).abs() <= AUTO_SCROLL_THRESHOLD
+    }
+
+    fn was_near_bottom(&self) -> bool {
+        let max_offset = self.last_max_offset;
+        if max_offset <= Pixels::ZERO {
+            return true;
+        }
+        let offset = self.last_scroll_offset;
         (offset + max_offset).abs() <= AUTO_SCROLL_THRESHOLD
     }
 
@@ -269,13 +282,18 @@ impl MessageList {
 
     fn update_scroll_follow(&mut self, auto_scroll: bool) {
         let offset = self.scroll_handle.offset().y;
+        let max_offset = self.scroll_handle.max_offset().height;
         let offset_delta = f32::from(offset) - f32::from(self.last_scroll_offset);
-        let user_scrolled_up = offset_delta > SCROLL_CHANGE_EPSILON;
-        let user_scrolled_down = offset_delta < -SCROLL_CHANGE_EPSILON;
+        let max_delta = (f32::from(max_offset) - f32::from(self.last_max_offset)).abs();
+        let content_size_changed = max_delta > SCROLL_CHANGE_EPSILON;
+        let user_scrolled_up = offset_delta > SCROLL_CHANGE_EPSILON && !content_size_changed;
+        let user_scrolled_down = offset_delta < -SCROLL_CHANGE_EPSILON && !content_size_changed;
 
         if !auto_scroll {
             self.stick_to_bottom = false;
         } else if self.pending_scroll_to_bottom {
+            self.stick_to_bottom = true;
+        } else if content_size_changed && self.was_near_bottom() {
             self.stick_to_bottom = true;
         } else if self.stick_to_bottom {
             if user_scrolled_up {
@@ -286,6 +304,7 @@ impl MessageList {
         }
 
         self.last_scroll_offset = offset;
+        self.last_max_offset = max_offset;
     }
 
     fn rebuild_virtual_items(&mut self) {
@@ -483,11 +502,14 @@ impl Render for MessageList {
         self.update_scroll_follow(auto_scroll);
 
         if auto_scroll && (self.stick_to_bottom || self.pending_scroll_to_bottom) {
-            let item_count = self.virtual_items.len();
-            if item_count > 0 {
-                self.scroll_handle
-                    .scroll_to_item(item_count - 1, ScrollStrategy::Bottom);
-            }
+            let max_offset = self.scroll_handle.max_offset().height;
+            let current_x = self.scroll_handle.offset().x;
+            let target_y = if max_offset > Pixels::ZERO {
+                -max_offset
+            } else {
+                Pixels::ZERO
+            };
+            self.scroll_handle.set_offset(point(current_x, target_y));
         }
         self.pending_scroll_to_bottom = false;
 
