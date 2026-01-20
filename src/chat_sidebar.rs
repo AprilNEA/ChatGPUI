@@ -28,139 +28,9 @@ pub struct ConversationSelectedEvent {
     pub conversation_id: Option<Uuid>,
 }
 
-/// Build the context menu for a conversation item.
-/// This is extracted as a separate function to be used with RightClickMenu.
-fn build_conversation_context_menu(
-    conversation_id: Uuid,
-    window: &mut Window,
-    cx: &mut App,
-) -> Entity<PopupMenu> {
-    use gpui_component::menu::PopupMenuItem;
-
-    // Create copies for each closure
-    let id_for_rename = conversation_id;
-    let id_for_favorite = conversation_id;
-    let id_for_generate = conversation_id;
-    let id_for_clone = conversation_id;
-    let id_for_icon = conversation_id;
-    let id_for_copy_text = conversation_id;
-    let id_for_copy_id = conversation_id.to_string();
-    let id_for_copy_link = format!("chatgpui://conversation/{}", conversation_id);
-    let id_for_export_json = conversation_id;
-    let id_for_export_md = conversation_id;
-    let id_for_export_txt = conversation_id;
-    let id_for_delete = conversation_id;
-
-    PopupMenu::build(window, cx, move |menu, window, cx| {
-        menu.item(
-            PopupMenuItem::new(t!("context.rename"))
-                .icon(IconName::Settings2)
-                .on_click(move |_, _, _cx| {
-                    tracing::info!("Rename conversation: {}", id_for_rename);
-                }),
-        )
-        .item(
-            PopupMenuItem::new(t!("context.favorite"))
-                .icon(IconName::Star)
-                .on_click(move |_, _, _cx| {
-                    tracing::info!("Toggle favorite: {}", id_for_favorite);
-                }),
-        )
-        .item(
-            PopupMenuItem::new(t!("context.generate_title"))
-                .icon(IconName::Bot)
-                .on_click(move |_, _, _cx| {
-                    tracing::info!("Generate title: {}", id_for_generate);
-                }),
-        )
-        .submenu(t!("context.title_max_lines"), window, cx, |menu, _, _| {
-            menu.item(PopupMenuItem::new(t!("context.lines_1")).on_click(|_, _, _| {}))
-                .item(PopupMenuItem::new(t!("context.lines_2")).on_click(|_, _, _| {}))
-                .item(PopupMenuItem::new(t!("context.lines_3")).on_click(|_, _, _| {}))
-        })
-        .separator()
-        .item(
-            PopupMenuItem::new(t!("context.clone"))
-                .icon(IconName::Copy)
-                .on_click(move |_, _, _cx| {
-                    tracing::info!("Clone conversation: {}", id_for_clone);
-                }),
-        )
-        .item(
-            PopupMenuItem::new(t!("context.hide_icon"))
-                .icon(IconName::EyeOff)
-                .on_click(move |_, _, _cx| {
-                    tracing::info!("Toggle icon: {}", id_for_icon);
-                }),
-        )
-        .separator()
-        .item(
-            PopupMenuItem::new(t!("context.copy_text"))
-                .icon(IconName::File)
-                .on_click(move |_, _, _cx| {
-                    tracing::info!("Copy text: {}", id_for_copy_text);
-                }),
-        )
-        .item(
-            PopupMenuItem::new(t!("context.copy_id"))
-                .icon(IconName::Copy)
-                .on_click({
-                    let id_str = id_for_copy_id.clone();
-                    move |_, _, cx| {
-                        cx.write_to_clipboard(ClipboardItem::new_string(id_str.clone()));
-                    }
-                }),
-        )
-        .item(
-            PopupMenuItem::new(t!("context.copy_link"))
-                .icon(IconName::ExternalLink)
-                .on_click({
-                    let link = id_for_copy_link.clone();
-                    move |_, _, cx| {
-                        cx.write_to_clipboard(ClipboardItem::new_string(link.clone()));
-                    }
-                }),
-        )
-        .separator()
-        .submenu(t!("context.export"), window, cx, move |menu, _, _| {
-            menu.item(
-                PopupMenuItem::new(t!("context.export_json"))
-                    .icon(IconName::File)
-                    .on_click(move |_, _, _cx| {
-                        tracing::info!("Export JSON: {}", id_for_export_json);
-                    }),
-            )
-            .item(
-                PopupMenuItem::new(t!("context.export_markdown"))
-                    .icon(IconName::File)
-                    .on_click(move |_, _, _cx| {
-                        tracing::info!("Export Markdown: {}", id_for_export_md);
-                    }),
-            )
-            .item(
-                PopupMenuItem::new(t!("context.export_txt"))
-                    .icon(IconName::File)
-                    .on_click(move |_, _, _cx| {
-                        tracing::info!("Export Text: {}", id_for_export_txt);
-                    }),
-            )
-        })
-        .separator()
-        .item(
-            PopupMenuItem::new(t!("context.delete"))
-                .icon(IconName::Delete)
-                .on_click(move |_, _, _cx| {
-                    tracing::info!("Delete conversation: {}", id_for_delete);
-                }),
-        )
-        .item(
-            PopupMenuItem::new(t!("context.delete_all"))
-                .icon(IconName::Delete)
-                .on_click(|_, _, _cx| {
-                    tracing::info!("Delete all conversations");
-                }),
-        )
-    })
+/// Event emitted when a conversation is deleted
+pub struct ConversationDeletedEvent {
+    pub conversation_id: Uuid,
 }
 
 /// Virtual list item type
@@ -190,6 +60,12 @@ struct ContextMenuState {
     _subscription: Subscription,
 }
 
+/// State for inline editing a conversation title
+struct EditingState {
+    conversation_id: Uuid,
+    input: Entity<InputState>,
+}
+
 /// Chat history sidebar component
 pub struct ChatSidebar {
     search_input: Entity<InputState>,
@@ -203,9 +79,12 @@ pub struct ChatSidebar {
     scroll_handle: VirtualListScrollHandle,
     /// Context menu state (if open)
     context_menu: Option<ContextMenuState>,
+    /// Inline editing state
+    editing: Option<EditingState>,
 }
 
 impl EventEmitter<ConversationSelectedEvent> for ChatSidebar {}
+impl EventEmitter<ConversationDeletedEvent> for ChatSidebar {}
 
 impl ChatSidebar {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
@@ -247,6 +126,7 @@ impl ChatSidebar {
             item_sizes: Rc::new(Vec::new()),
             scroll_handle: VirtualListScrollHandle::new(),
             context_menu: None,
+            editing: None,
         }
     }
 
@@ -359,6 +239,137 @@ impl ChatSidebar {
         cx.notify();
     }
 
+    /// Start renaming a conversation
+    fn start_rename(&mut self, conversation_id: Uuid, window: &mut Window, cx: &mut Context<Self>) {
+        // Get current title
+        let current_title = self
+            .conversations
+            .iter()
+            .find(|c| c.id == conversation_id)
+            .map(|c| c.title.clone())
+            .unwrap_or_default();
+
+        // Create input state with current title
+        let input = cx.new(|cx| {
+            let mut state = InputState::new(window, cx);
+            state.set_value(current_title, window, cx);
+            state
+        });
+
+        // Focus the input on next frame
+        let focus_handle = input.focus_handle(cx);
+        window.on_next_frame(move |window, _cx| {
+            focus_handle.focus(window);
+        });
+
+        self.editing = Some(EditingState {
+            conversation_id,
+            input,
+        });
+        cx.notify();
+    }
+
+    /// Save the renamed conversation title
+    fn save_rename(&mut self, cx: &mut Context<Self>) {
+        let Some(editing) = self.editing.take() else {
+            return;
+        };
+
+        let new_title = editing.input.read(cx).value().to_string();
+        let conversation_id = editing.conversation_id;
+
+        // Don't save empty titles
+        if new_title.trim().is_empty() {
+            cx.notify();
+            return;
+        }
+
+        // Update local list
+        if let Some(conv) = self
+            .conversations
+            .iter_mut()
+            .find(|c| c.id == conversation_id)
+        {
+            conv.title = new_title.clone();
+        }
+        self.rebuild_flat_list();
+        cx.notify();
+
+        // Update database asynchronously
+        let db = database::get_db(cx).clone();
+        Tokio::spawn(cx, async move {
+            if let Err(e) = db
+                .update_conversation_title(conversation_id, new_title)
+                .await
+            {
+                tracing::error!("Failed to update conversation title: {}", e);
+            }
+        })
+        .detach();
+    }
+
+    /// Cancel renaming
+    fn cancel_rename(&mut self, cx: &mut Context<Self>) {
+        self.editing = None;
+        cx.notify();
+    }
+
+    /// Delete a conversation
+    fn delete_conversation(&mut self, conversation_id: Uuid, cx: &mut Context<Self>) {
+        let db = database::get_db(cx).clone();
+
+        // If deleting current conversation, deselect it
+        if self.selected_conversation == Some(conversation_id) {
+            self.selected_conversation = None;
+            cx.emit(ConversationSelectedEvent {
+                conversation_id: None,
+            });
+        }
+
+        // Remove from local list immediately for responsiveness
+        self.conversations.retain(|c| c.id != conversation_id);
+        self.rebuild_flat_list();
+        cx.notify();
+
+        // Emit deleted event
+        cx.emit(ConversationDeletedEvent { conversation_id });
+
+        // Delete from database asynchronously
+        Tokio::spawn(cx, async move {
+            if let Err(e) = db.delete_conversation(conversation_id).await {
+                tracing::error!("Failed to delete conversation: {}", e);
+            }
+        })
+        .detach();
+    }
+
+    /// Delete all conversations
+    fn delete_all_conversations(&mut self, cx: &mut Context<Self>) {
+        let db = database::get_db(cx).clone();
+        let conversation_ids: Vec<Uuid> = self.conversations.iter().map(|c| c.id).collect();
+
+        // Deselect current conversation
+        self.selected_conversation = None;
+        cx.emit(ConversationSelectedEvent {
+            conversation_id: None,
+        });
+
+        // Clear local list immediately
+        self.conversations.clear();
+        self.rebuild_flat_list();
+        cx.notify();
+
+        // Delete from database asynchronously
+        Tokio::spawn(cx, async move {
+            for id in conversation_ids {
+                if let Err(e) = db.delete_conversation(id).await {
+                    tracing::error!("Failed to delete conversation {}: {}", id, e);
+                }
+            }
+        })
+        .detach();
+    }
+
     /// Show context menu for a conversation
     fn show_context_menu(
         &mut self,
@@ -367,7 +378,132 @@ impl ChatSidebar {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let menu = build_conversation_context_menu(conversation_id, window, cx);
+        use gpui_component::menu::PopupMenuItem;
+
+        let entity = cx.entity().clone();
+        let id_for_copy_id = conversation_id.to_string();
+        let id_for_copy_link = format!("chatgpui://conversation/{}", conversation_id);
+
+        let menu = PopupMenu::build(window, cx, move |menu, window, cx| {
+            let entity_for_rename = entity.clone();
+            let entity_for_delete = entity.clone();
+            let entity_for_delete_all = entity.clone();
+
+            menu.item(
+                PopupMenuItem::new(t!("context.rename"))
+                    .icon(IconName::Settings2)
+                    .on_click(move |_, window, cx| {
+                        entity_for_rename.update(cx, |this, cx| {
+                            this.start_rename(conversation_id, window, cx);
+                        });
+                    }),
+            )
+            .item(
+                PopupMenuItem::new(t!("context.favorite"))
+                    .icon(IconName::Star)
+                    .on_click(move |_, _, _cx| {
+                        tracing::info!("Toggle favorite: {}", conversation_id);
+                    }),
+            )
+            .item(
+                PopupMenuItem::new(t!("context.generate_title"))
+                    .icon(IconName::Bot)
+                    .on_click(move |_, _, _cx| {
+                        tracing::info!("Generate title: {}", conversation_id);
+                    }),
+            )
+            .submenu(t!("context.title_max_lines"), window, cx, |menu, _, _| {
+                menu.item(PopupMenuItem::new(t!("context.lines_1")).on_click(|_, _, _| {}))
+                    .item(PopupMenuItem::new(t!("context.lines_2")).on_click(|_, _, _| {}))
+                    .item(PopupMenuItem::new(t!("context.lines_3")).on_click(|_, _, _| {}))
+            })
+            .separator()
+            .item(
+                PopupMenuItem::new(t!("context.clone"))
+                    .icon(IconName::Copy)
+                    .on_click(move |_, _, _cx| {
+                        tracing::info!("Clone conversation: {}", conversation_id);
+                    }),
+            )
+            .item(
+                PopupMenuItem::new(t!("context.hide_icon"))
+                    .icon(IconName::EyeOff)
+                    .on_click(move |_, _, _cx| {
+                        tracing::info!("Toggle icon: {}", conversation_id);
+                    }),
+            )
+            .separator()
+            .item(
+                PopupMenuItem::new(t!("context.copy_text"))
+                    .icon(IconName::File)
+                    .on_click(move |_, _, _cx| {
+                        tracing::info!("Copy text: {}", conversation_id);
+                    }),
+            )
+            .item(
+                PopupMenuItem::new(t!("context.copy_id"))
+                    .icon(IconName::Copy)
+                    .on_click({
+                        let id_str = id_for_copy_id.clone();
+                        move |_, _, cx| {
+                            cx.write_to_clipboard(ClipboardItem::new_string(id_str.clone()));
+                        }
+                    }),
+            )
+            .item(
+                PopupMenuItem::new(t!("context.copy_link"))
+                    .icon(IconName::ExternalLink)
+                    .on_click({
+                        let link = id_for_copy_link.clone();
+                        move |_, _, cx| {
+                            cx.write_to_clipboard(ClipboardItem::new_string(link.clone()));
+                        }
+                    }),
+            )
+            .separator()
+            .submenu(t!("context.export"), window, cx, move |menu, _, _| {
+                menu.item(
+                    PopupMenuItem::new(t!("context.export_json"))
+                        .icon(IconName::File)
+                        .on_click(move |_, _, _cx| {
+                            tracing::info!("Export JSON: {}", conversation_id);
+                        }),
+                )
+                .item(
+                    PopupMenuItem::new(t!("context.export_markdown"))
+                        .icon(IconName::File)
+                        .on_click(move |_, _, _cx| {
+                            tracing::info!("Export Markdown: {}", conversation_id);
+                        }),
+                )
+                .item(
+                    PopupMenuItem::new(t!("context.export_txt"))
+                        .icon(IconName::File)
+                        .on_click(move |_, _, _cx| {
+                            tracing::info!("Export Text: {}", conversation_id);
+                        }),
+                )
+            })
+            .separator()
+            .item(
+                PopupMenuItem::new(t!("context.delete"))
+                    .icon(IconName::Delete)
+                    .on_click(move |_, _, cx| {
+                        entity_for_delete.update(cx, |this, cx| {
+                            this.delete_conversation(conversation_id, cx);
+                        });
+                    }),
+            )
+            .item(
+                PopupMenuItem::new(t!("context.delete_all"))
+                    .icon(IconName::Delete)
+                    .on_click(move |_, _, cx| {
+                        entity_for_delete_all.update(cx, |this, cx| {
+                            this.delete_all_conversations(cx);
+                        });
+                    }),
+            )
+        });
 
         // Subscribe to dismiss event with double-frame focus scheduling (Zed's pattern)
         let focus_handle = menu.focus_handle(cx);
@@ -420,6 +556,8 @@ impl ChatSidebar {
         let selected = self.selected_conversation;
         let items = self.flat_items.clone();
         let item_sizes = self.item_sizes.clone();
+        let editing_id = self.editing.as_ref().map(|e| e.conversation_id);
+        let editing_input = self.editing.as_ref().map(|e| e.input.clone());
 
         v_flex()
             .flex_1()
@@ -433,6 +571,7 @@ impl ChatSidebar {
                         use std::str::FromStr;
 
                         let theme = cx.theme();
+                        let editing_input = editing_input.clone();
 
                         visible_range
                             .map(|ix| {
@@ -457,6 +596,7 @@ impl ChatSidebar {
                                         let is_selected = selected == Some(*id);
                                         let item_id = *id;
                                         let provider = LlmProvider::from_str(provider_id).ok();
+                                        let is_editing = editing_id == Some(item_id);
 
                                         div()
                                             .id(SharedString::from(format!("conv-{}", item_id)))
@@ -486,6 +626,10 @@ impl ChatSidebar {
                                                     .selected(is_selected)
                                                     .on_click(cx.listener(
                                                         move |this, _event: &ClickEvent, _window, cx| {
+                                                            // Cancel editing if clicking elsewhere
+                                                            if this.editing.is_some() {
+                                                                this.cancel_rename(cx);
+                                                            }
                                                             this.select_conversation(
                                                                 Some(item_id),
                                                                 cx,
@@ -524,11 +668,38 @@ impl ChatSidebar {
                                                                     )
                                                                     .into_any_element()
                                                             })
-                                                            .child(
+                                                            .child(if is_editing {
+                                                                if let Some(ref input) = editing_input {
+                                                                    // Wrap input in div for key handling
+                                                                    div()
+                                                                        .flex_1()
+                                                                        .on_key_down(cx.listener(
+                                                                            |this, event: &KeyDownEvent, _, cx| {
+                                                                                if event.keystroke.key == "enter" {
+                                                                                    this.save_rename(cx);
+                                                                                } else if event.keystroke.key == "escape" {
+                                                                                    this.cancel_rename(cx);
+                                                                                }
+                                                                            },
+                                                                        ))
+                                                                        .child(
+                                                                            Input::new(input)
+                                                                                .appearance(false)
+                                                                                .text_sm(),
+                                                                        )
+                                                                        .into_any_element()
+                                                                } else {
+                                                                    Label::new(title.clone())
+                                                                        .text_sm()
+                                                                        .truncate()
+                                                                        .into_any_element()
+                                                                }
+                                                            } else {
                                                                 Label::new(title.clone())
                                                                     .text_sm()
-                                                                    .truncate(),
-                                                            ),
+                                                                    .truncate()
+                                                                    .into_any_element()
+                                                            }),
                                                     ),
                                             )
                                             .into_any_element()

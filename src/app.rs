@@ -15,7 +15,7 @@ use gpui_component::{
 };
 use gpui_tokio_bridge::Tokio;
 
-use crate::chat_sidebar::{ChatSidebar, ConversationSelectedEvent};
+use crate::chat_sidebar::{ChatSidebar, ConversationDeletedEvent, ConversationSelectedEvent};
 use crate::chat_view::{BackgroundStreamFinishedEvent, ChatView, ConversationUpdatedEvent};
 use crate::database;
 use crate::model_selector::{ModelSelector, ModelSelectorChangedEvent};
@@ -90,6 +90,17 @@ impl ChatApp {
                         view.load_conversation(conv_id, cx);
                     });
                 }
+            },
+        ));
+
+        // Subscribe to conversation deletion events (to clean up cache)
+        subscriptions.push(cx.subscribe_in(
+            &sidebar,
+            window,
+            |this, _, event: &ConversationDeletedEvent, _window, cx| {
+                this.chat_view.update(cx, |view, _cx| {
+                    view.remove_from_cache(event.conversation_id);
+                });
             },
         ));
 

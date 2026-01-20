@@ -15,17 +15,16 @@ use std::time::Instant;
 use gpui::prelude::FluentBuilder;
 use gpui::*;
 use gpui_component::{
-    ActiveTheme, VirtualListScrollHandle, h_flex, label::Label, skeleton::Skeleton, v_flex,
-    v_virtual_list,
+    ActiveTheme, h_flex, label::Label, skeleton::Skeleton, v_flex, v_virtual_list,
 };
 use gpui_markdown::Markdown;
 use rust_i18n::t;
 use uuid::Uuid;
 
 use crate::message::{Message, MessageStatus, Role};
+use crate::scroll_manager::ScrollManager;
 use crate::settings::get_settings;
 
-const AUTO_SCROLL_THRESHOLD: Pixels = px(24.);
 const DEFAULT_CONTENT_WIDTH: Pixels = px(640.);
 const LIST_HORIZONTAL_PADDING: Pixels = px(16.);
 const USER_BUBBLE_MAX_WIDTH: Pixels = px(512.);
@@ -37,6 +36,10 @@ const STREAMING_DOTS_HEIGHT: Pixels = px(16.);
 const STREAMING_DOTS_GAP: Pixels = px(8.);
 const ERROR_ROW_HEIGHT: Pixels = px(20.);
 const ERROR_ROW_GAP: Pixels = px(8.);
+const THINKING_HEADER_HEIGHT: Pixels = px(28.); // Header with padding
+const THINKING_CONTENT_LINE_HEIGHT: Pixels = px(14.); // text_xs line height
+const THINKING_CONTENT_PADDING: Pixels = px(16.); // px_2 + py_2
+const THINKING_GAP: Pixels = px(4.); // gap_1
 const ESTIMATED_TEXT_LINE_HEIGHT: Pixels = px(18.);
 const ESTIMATED_CHAR_WIDTH: f32 = 7.0;
 // Code block extra height: header (~28px) + vertical padding (~24px) + borders (~4px)
@@ -45,9 +48,7 @@ const CODE_BLOCK_EXTRA_HEIGHT: Pixels = px(56.);
 const CODE_LINE_HEIGHT: Pixels = px(16.);
 // Larger epsilon to avoid frequent rebuilds during sidebar animation
 const WIDTH_CHANGE_EPSILON: f32 = 20.0;
-const SCROLL_CHANGE_EPSILON: f32 = 1.0;
 const REMEASURE_INTERVAL_MS: u64 = 250;
-const TAIL_PREMEASURE_COUNT: usize = 24;
 
 fn max_pixels(a: Pixels, b: Pixels) -> Pixels {
     if f32::from(a) >= f32::from(b) { a } else { b }
@@ -61,7 +62,13 @@ fn pixels_changed(a: Pixels, b: Pixels) -> bool {
     (f32::from(a) - f32::from(b)).abs() > 0.5
 }
 
-fn layout_hash(role: Role, status: &MessageStatus, content: &str) -> u64 {
+fn layout_hash(
+    role: Role,
+    status: &MessageStatus,
+    content: &str,
+    thinking_content: Option<&str>,
+    thinking_collapsed: bool,
+) -> u64 {
     let mut hasher = DefaultHasher::new();
     let role_tag = match role {
         Role::System => 0,
@@ -79,6 +86,14 @@ fn layout_hash(role: Role, status: &MessageStatus, content: &str) -> u64 {
         }
     }
     hasher.write(content.as_bytes());
+    // Include thinking state in hash for accurate height calculation
+    if let Some(thinking) = thinking_content {
+        hasher.write_u8(1);
+        hasher.write(thinking.as_bytes());
+        hasher.write_u8(if thinking_collapsed { 1 } else { 0 });
+    } else {
+        hasher.write_u8(0);
+    }
     hasher.finish()
 }
 
@@ -95,9 +110,32 @@ struct LayoutMetrics {
     estimated_height: Pixels,
     is_streaming: bool,
     force_remeasure: bool,
+    cacheable: bool,
+}
+
+#[derive(Clone, Copy, Hash, PartialEq, Eq)]
+struct HeightCacheKey {
+    id: Uuid,
+    width: i32,
+    hash: u64,
+}
+
+impl HeightCacheKey {
+    fn new(id: Uuid, width: Pixels, hash: u64) -> Self {
+        let width_key = f32::from(width).round() as i32;
+        Self::from_parts(id, width_key, hash)
+    }
+
+    fn from_parts(id: Uuid, width: i32, hash: u64) -> Self {
+        Self { id, width, hash }
+    }
 }
 
 pub struct MessageList {
+    /// The conversation ID this MessageList is bound to (immutable after creation).
+    /// Follows Zed's pattern: Entity binds to data at creation, cannot be reassigned.
+    #[allow(dead_code)]
+    conversation_id: Option<Uuid>,
     /// History items keyed by message id for stable identity.
     message_index: HashMap<Uuid, Entity<MessageItem>>,
     /// Ordered history items.
@@ -107,36 +145,71 @@ pub struct MessageList {
     /// Flattened list used for virtualization.
     virtual_items: Vec<Entity<MessageItem>>,
     item_sizes: Rc<Vec<Size<Pixels>>>,
-    scroll_handle: VirtualListScrollHandle,
-    /// Whether to scroll to bottom on next render.
-    pending_scroll_to_bottom: bool,
-    /// Whether the view should keep following the bottom.
-    stick_to_bottom: bool,
-    /// Whether to pre-measure the tail items on the next render.
-    pending_tail_measure: bool,
+    /// Scroll state manager (handles scroll position, auto-scroll)
+    scroll_manager: ScrollManager,
     size_cache: HashMap<Uuid, MeasureEntry>,
+    height_cache: HashMap<HeightCacheKey, Pixels>,
     content_width: Option<Pixels>,
-    last_scroll_offset: Pixels,
-    last_max_offset: Pixels,
 }
 
 impl MessageList {
+    /// Create a new MessageList not bound to any conversation (for new chats).
     pub fn new(_cx: &mut Context<Self>) -> Self {
         Self {
+            conversation_id: None,
             message_index: HashMap::new(),
             message_items: Vec::new(),
             streaming_item: None,
             virtual_items: Vec::new(),
             item_sizes: Rc::new(Vec::new()),
-            scroll_handle: VirtualListScrollHandle::new(),
-            pending_scroll_to_bottom: false,
-            stick_to_bottom: true,
-            pending_tail_measure: false,
+            scroll_manager: ScrollManager::new(),
             size_cache: HashMap::new(),
+            height_cache: HashMap::new(),
             content_width: None,
-            last_scroll_offset: Pixels::ZERO,
-            last_max_offset: Pixels::ZERO,
         }
+    }
+
+    /// Create a new MessageList bound to a specific conversation.
+    ///
+    /// Following Zed's pattern: the conversation_id is set at creation and cannot
+    /// be changed. To switch conversations, create a new MessageList Entity.
+    pub fn new_for_conversation(conversation_id: Uuid, _cx: &mut Context<Self>) -> Self {
+        Self {
+            conversation_id: Some(conversation_id),
+            message_index: HashMap::new(),
+            message_items: Vec::new(),
+            streaming_item: None,
+            virtual_items: Vec::new(),
+            item_sizes: Rc::new(Vec::new()),
+            scroll_manager: ScrollManager::new(),
+            size_cache: HashMap::new(),
+            height_cache: HashMap::new(),
+            content_width: None,
+        }
+    }
+
+    /// Get the conversation ID this MessageList is bound to.
+    #[allow(dead_code)]
+    pub fn conversation_id(&self) -> Option<Uuid> {
+        self.conversation_id
+    }
+
+    /// Check if this MessageList has an active streaming message.
+    #[allow(dead_code)]
+    pub fn has_streaming(&self) -> bool {
+        self.streaming_item.is_some()
+    }
+
+    /// Get a mutable reference to the scroll manager
+    #[allow(dead_code)]
+    pub fn scroll_manager_mut(&mut self) -> &mut ScrollManager {
+        &mut self.scroll_manager
+    }
+
+    /// Get a reference to the scroll manager
+    #[allow(dead_code)]
+    pub fn scroll_manager(&self) -> &ScrollManager {
+        &self.scroll_manager
     }
 
     /// Set historical messages (non-streaming).
@@ -175,10 +248,8 @@ impl MessageList {
         self.rebuild_item_sizes(cx);
 
         // If a new message arrives, mark scroll to bottom.
-        if (new_message_added || self.streaming_item.is_some())
-            && (self.stick_to_bottom || self.was_near_bottom())
-        {
-            self.pending_scroll_to_bottom = true;
+        if new_message_added || self.streaming_item.is_some() {
+            self.scroll_manager.scroll_to_bottom_if_following();
         }
 
         cx.notify();
@@ -252,42 +323,19 @@ impl MessageList {
     /// Start a new streaming message.
     pub fn start_streaming(&mut self, message: Message, cx: &mut Context<Self>) {
         self.streaming_item = Some(cx.new(|_cx| MessageItem::from_streaming(message)));
-        if self.stick_to_bottom || self.was_near_bottom() {
-            self.pending_scroll_to_bottom = true;
-        }
+        self.scroll_manager.scroll_to_bottom_if_following();
         self.rebuild_virtual_items();
         self.rebuild_item_sizes(cx);
         cx.notify();
     }
 
+    #[allow(dead_code)]
     pub fn reset_scroll_tracking(&mut self) {
-        self.last_scroll_offset = Pixels::ZERO;
-        self.last_max_offset = Pixels::ZERO;
-        self.stick_to_bottom = true;
-        self.pending_scroll_to_bottom = true;
-        self.pending_tail_measure = true;
-    }
-
-    fn is_near_bottom(&self) -> bool {
-        let max_offset = self.scroll_handle.max_offset().height;
-        if max_offset <= Pixels::ZERO {
-            return true;
-        }
-        let offset = self.scroll_handle.offset().y;
-        (offset + max_offset).abs() <= AUTO_SCROLL_THRESHOLD
-    }
-
-    fn was_near_bottom(&self) -> bool {
-        let max_offset = self.last_max_offset;
-        if max_offset <= Pixels::ZERO {
-            return true;
-        }
-        let offset = self.last_scroll_offset;
-        (offset + max_offset).abs() <= AUTO_SCROLL_THRESHOLD
+        self.scroll_manager.reset();
     }
 
     fn update_content_width(&mut self, cx: &mut Context<Self>) {
-        let list_width = self.scroll_handle.bounds().size.width;
+        let list_width = self.scroll_manager.bounds().size.width;
         if list_width <= Pixels::ZERO {
             return;
         }
@@ -312,32 +360,6 @@ impl MessageList {
         }
     }
 
-    fn update_scroll_follow(&mut self, auto_scroll: bool) {
-        let offset = self.scroll_handle.offset().y;
-        let max_offset = self.scroll_handle.max_offset().height;
-        let offset_delta = f32::from(offset) - f32::from(self.last_scroll_offset);
-        let max_delta = (f32::from(max_offset) - f32::from(self.last_max_offset)).abs();
-        let content_size_changed = max_delta > SCROLL_CHANGE_EPSILON;
-        let user_scrolled_up = offset_delta > SCROLL_CHANGE_EPSILON && !content_size_changed;
-        let user_scrolled_down = offset_delta < -SCROLL_CHANGE_EPSILON && !content_size_changed;
-
-        if !auto_scroll {
-            self.stick_to_bottom = false;
-        } else if self.pending_scroll_to_bottom || (content_size_changed && self.was_near_bottom())
-        {
-            self.stick_to_bottom = true;
-        } else if self.stick_to_bottom {
-            if user_scrolled_up {
-                self.stick_to_bottom = false;
-            }
-        } else if user_scrolled_down && self.is_near_bottom() {
-            self.stick_to_bottom = true;
-        }
-
-        self.last_scroll_offset = offset;
-        self.last_max_offset = max_offset;
-    }
-
     fn rebuild_virtual_items(&mut self) {
         self.virtual_items.clear();
         self.virtual_items
@@ -358,6 +380,9 @@ impl MessageList {
                 item_ref.layout_metrics(content_width)
             };
 
+            let cache_key = HeightCacheKey::new(metrics.id, content_width, metrics.hash);
+            let cached_height = self.height_cache.get(&cache_key).copied();
+
             let entry = self.size_cache.entry(metrics.id).or_insert(MeasureEntry {
                 height: metrics.estimated_height,
                 hash: metrics.hash,
@@ -374,6 +399,12 @@ impl MessageList {
                 } else {
                     metrics.estimated_height
                 };
+            }
+
+            if let Some(height) = cached_height {
+                entry.height = height;
+                entry.measured = true;
+                entry.last_measured_at = Some(Instant::now());
             } else if !entry.measured {
                 entry.height = if metrics.is_streaming {
                     max_pixels(entry.height, metrics.estimated_height)
@@ -517,6 +548,11 @@ impl MessageList {
                 entry.last_measured_at = Some(Instant::now());
             }
             entry.measured = true;
+
+            if !metrics.is_streaming && metrics.cacheable {
+                let cache_key = HeightCacheKey::new(metrics.id, content_width, metrics.hash);
+                self.height_cache.insert(cache_key, entry.height);
+            }
         }
 
         if updated {
@@ -524,42 +560,16 @@ impl MessageList {
             cx.notify();
         }
     }
-
-    fn measure_tail_items(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let total = self.virtual_items.len();
-        if total == 0 {
-            return;
-        }
-        let tail_len = TAIL_PREMEASURE_COUNT.min(total);
-        let start = total - tail_len;
-        self.measure_visible_items(start..total, window, cx);
-    }
 }
 
 impl Render for MessageList {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.update_content_width(cx);
+
+        // Update scroll tracking and apply pending scroll operations
         let auto_scroll = get_settings(cx).auto_scroll;
-        self.update_scroll_follow(auto_scroll);
-
-        if self.pending_tail_measure {
-            self.measure_tail_items(window, cx);
-            self.pending_tail_measure = false;
-        }
-
-        let should_scroll_to_bottom =
-            auto_scroll && (self.stick_to_bottom || self.pending_scroll_to_bottom);
-        if should_scroll_to_bottom {
-            let max_offset = self.scroll_handle.max_offset().height;
-            let current_x = self.scroll_handle.offset().x;
-            let target_y = if max_offset > Pixels::ZERO {
-                -max_offset
-            } else {
-                Pixels::ZERO
-            };
-            self.scroll_handle.set_offset(point(current_x, target_y));
-        }
-        self.pending_scroll_to_bottom = false;
+        self.scroll_manager.update_scroll_follow(auto_scroll);
+        self.scroll_manager.apply_pending_scroll(auto_scroll);
 
         let view = cx.entity();
         v_virtual_list(
@@ -584,7 +594,7 @@ impl Render for MessageList {
         .p_4()
         .gap_6()
         .overflow_x_hidden()
-        .track_scroll(&self.scroll_handle)
+        .track_scroll(self.scroll_manager.handle())
     }
 }
 
@@ -607,6 +617,8 @@ pub struct MessageItem {
     id: Uuid,
     element_id: SharedString,
     source: MessageSource,
+    /// Cached SharedString for content to avoid repeated conversions.
+    cached_content: Option<SharedString>,
     /// Whether the thinking section is collapsed
     thinking_collapsed: bool,
 }
@@ -617,6 +629,7 @@ impl MessageItem {
             id,
             element_id: SharedString::from(format!("message-{}", id)),
             source,
+            cached_content: None,
             thinking_collapsed: true, // Default to collapsed
         }
     }
@@ -653,11 +666,18 @@ impl MessageItem {
         }
     }
 
-    fn content(&self) -> SharedString {
-        match &self.source {
+    fn content(&mut self) -> SharedString {
+        // Return cached content if available
+        if let Some(cached) = &self.cached_content {
+            return cached.clone();
+        }
+        // Build and cache the SharedString
+        let shared: SharedString = match &self.source {
             MessageSource::Arc(msg) => msg.content.clone().into(),
             MessageSource::Snapshot { content, .. } => content.clone().into(),
-        }
+        };
+        self.cached_content = Some(shared.clone());
+        shared
     }
 
     fn content_str(&self) -> &str {
@@ -678,34 +698,47 @@ impl MessageItem {
         let role = self.role();
         let status = self.status();
         let content = self.content_str();
-        let hash = layout_hash(role, status, content);
+        let thinking_content = self.thinking_content();
+        let thinking_collapsed = self.thinking_collapsed;
+        let hash = layout_hash(role, status, content, thinking_content, thinking_collapsed);
         let force_remeasure =
             role == Role::Assistant && (content.contains("```") || content.contains("~~~"));
-        let estimated_height = estimate_item_height(role, status, content, content_width);
+        let estimated_height = estimate_item_height(
+            role,
+            status,
+            content,
+            thinking_content,
+            thinking_collapsed,
+            content_width,
+        );
         let is_streaming = matches!(status, MessageStatus::Streaming);
+        let cacheable = thinking_collapsed;
         LayoutMetrics {
             id: self.id,
             hash,
             estimated_height,
             is_streaming,
             force_remeasure,
+            cacheable,
         }
     }
 
-    fn append_content(&mut self, chunk: &str, cx: &mut Context<Self>) {
+    fn append_content(&mut self, chunk: &str, _cx: &mut Context<Self>) {
         if let MessageSource::Snapshot { content, .. } = &mut self.source {
             content.push_str(chunk);
-            cx.notify();
+            // Invalidate cache since content changed
+            self.cached_content = None;
+            // Note: Caller (MessageList) handles notify to avoid duplicate notifications
         }
     }
 
-    fn append_thinking_content(&mut self, chunk: &str, cx: &mut Context<Self>) {
+    fn append_thinking_content(&mut self, chunk: &str, _cx: &mut Context<Self>) {
         if let MessageSource::Snapshot {
             thinking_content, ..
         } = &mut self.source
         {
             thinking_content.push_str(chunk);
-            cx.notify();
+            // Note: Caller (MessageList) handles notify to avoid duplicate notifications
         }
     }
 
@@ -775,6 +808,8 @@ fn estimate_item_height(
     role: Role,
     status: &MessageStatus,
     content: &str,
+    thinking_content: Option<&str>,
+    thinking_collapsed: bool,
     content_width: Pixels,
 ) -> Pixels {
     match role {
@@ -791,6 +826,20 @@ fn estimate_item_height(
                 estimate_text_height(content, content_width)
             };
             let mut height = ASSISTANT_LABEL_HEIGHT + ASSISTANT_LABEL_GAP + text_height;
+
+            // Add thinking section height if present
+            if let Some(thinking) = thinking_content {
+                // Always add header height
+                height += THINKING_GAP + THINKING_HEADER_HEIGHT;
+
+                // Add content height only if expanded
+                if !thinking_collapsed && !thinking.is_empty() {
+                    let thinking_lines = thinking.lines().count().max(1);
+                    let thinking_text_height = THINKING_CONTENT_LINE_HEIGHT * thinking_lines;
+                    height += THINKING_GAP + THINKING_CONTENT_PADDING + thinking_text_height;
+                }
+            }
+
             if matches!(status, MessageStatus::Streaming) {
                 height += STREAMING_DOTS_GAP + STREAMING_DOTS_HEIGHT;
             }
@@ -809,12 +858,14 @@ fn estimate_text_height(content: &str, width: Pixels) -> Pixels {
     let mut total_height = px(0.);
     let mut in_code_block = false;
     let mut code_block_lines = 0usize;
+    let mut line_count = 0usize;
 
     if content.is_empty() {
         return ESTIMATED_TEXT_LINE_HEIGHT;
     }
 
     for line in content.lines() {
+        line_count += 1;
         // Check for code block delimiters
         let trimmed = line.trim_start();
         if trimmed.starts_with("```") || trimmed.starts_with("~~~") {
@@ -833,10 +884,21 @@ fn estimate_text_height(content: &str, width: Pixels) -> Pixels {
             code_block_lines += 1;
         } else {
             // Regular text - estimate wrapping
-            let len = line.chars().count().max(1);
-            let needed = len.div_ceil(chars_per_line);
-            total_height += ESTIMATED_TEXT_LINE_HEIGHT * needed.max(1);
+            // Empty lines still take one line height
+            if line.is_empty() {
+                total_height += ESTIMATED_TEXT_LINE_HEIGHT;
+            } else {
+                let len = line.chars().count();
+                let needed = len.div_ceil(chars_per_line);
+                total_height += ESTIMATED_TEXT_LINE_HEIGHT * needed.max(1);
+            }
         }
+    }
+
+    // Handle trailing newline: lines() doesn't yield empty string for trailing \n
+    // If content ends with newline and we processed at least one line, add extra line
+    if content.ends_with('\n') && line_count > 0 && !in_code_block {
+        total_height += ESTIMATED_TEXT_LINE_HEIGHT;
     }
 
     // Handle unclosed code block (streaming)

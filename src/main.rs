@@ -14,19 +14,21 @@ mod app;
 mod assets;
 mod chat_sidebar;
 mod chat_view;
+mod conversation_cache;
 mod database;
 mod llm;
 mod message;
 mod message_input;
 mod message_list;
 mod model_selector;
+mod scroll_manager;
 mod settings;
 mod storage;
 
 use std::path::PathBuf;
 
 use gpui::*;
-use gpui_component::{Root, Theme, ThemeRegistry};
+use gpui_component::{Root, ThemeRegistry};
 
 use crate::assets::Assets;
 
@@ -111,12 +113,8 @@ fn main() {
         database::init(cx);
 
         // Load themes from themes directory
-        let theme_name = SharedString::from("macOS Classic Dark");
         if let Err(err) = ThemeRegistry::watch_dir(PathBuf::from("./themes"), cx, move |cx| {
-            if let Some(theme) = ThemeRegistry::global(cx).themes().get(&theme_name).cloned() {
-                Theme::global_mut(cx).apply_config(&theme);
-            }
-            // Apply saved appearance settings after theme is loaded
+            // Apply saved appearance settings (including theme) after themes are loaded
             apply_appearance_settings(None, cx);
         }) {
             tracing::error!("Failed to watch themes directory: {}", err);

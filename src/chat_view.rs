@@ -5,12 +5,13 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use gpui::*;
+use gpui::{prelude::FluentBuilder, *};
 use gpui_component::{ActiveTheme, v_flex};
 use gpui_tokio_bridge::Tokio;
 use uuid::Uuid;
 
 use crate::{
+    conversation_cache::ConversationCache,
     database::{self, attachment as db_attachment, message as db_message},
     llm::{self, LlmProvider, StreamEvent},
     message::{Attachment, AttachmentType, ChatMessage, Message, MessageStatus, Role},
@@ -54,8 +55,13 @@ struct PendingStreamResult {
 }
 
 pub struct ChatView {
+    /// Messages for the current conversation (kept for API calls)
     messages: Vec<Arc<Message>>,
-    message_list: Entity<MessageList>,
+    /// LRU cache of MessageList entities by conversation ID.
+    /// Following Zed's pattern: each conversation has its own Entity.
+    conversation_cache: ConversationCache,
+    /// Currently active MessageList Entity (switched on conversation change).
+    current_message_list: Option<Entity<MessageList>>,
     message_input: Entity<MessageInput>,
     llm_provider: Option<Arc<dyn LlmProvider>>,
     current_model_id: String,
@@ -75,6 +81,7 @@ impl EventEmitter<BackgroundStreamFinishedEvent> for ChatView {}
 
 impl ChatView {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
+        // Create initial message list for new chat (no conversation ID)
         let message_list = cx.new(MessageList::new);
         let message_input = cx.new(|cx| MessageInput::new(window, cx));
 
@@ -110,7 +117,8 @@ impl ChatView {
 
         Self {
             messages,
-            message_list,
+            conversation_cache: ConversationCache::new(),
+            current_message_list: Some(message_list),
             message_input,
             llm_provider,
             current_model_id,
@@ -126,24 +134,50 @@ impl ChatView {
 
     /// Start a new chat (clear messages and conversation)
     pub fn new_chat(&mut self, cx: &mut Context<Self>) {
+        // Cache current MessageList if it belongs to a conversation
+        self.cache_current_message_list();
+
         self.messages.clear();
         self.messages
             .push(Arc::new(Message::system("You are a helpful assistant.")));
         self.current_conversation_id = None;
         self.clear_streaming_ui_buffer();
-        // Reset scroll tracking BEFORE updating message list
-        self.message_list
-            .update(cx, |list, _cx| list.reset_scroll_tracking());
+
+        // Create a new MessageList for the new chat (no conversation ID)
+        self.current_message_list = Some(cx.new(MessageList::new));
         self.update_message_list(cx);
     }
 
     /// Load an existing conversation
     pub fn load_conversation(&mut self, conversation_id: Uuid, cx: &mut Context<Self>) {
+        // Don't reload if already on this conversation
+        if self.current_conversation_id == Some(conversation_id) {
+            return;
+        }
+
+        // Cache current MessageList if it belongs to a conversation
+        self.cache_current_message_list();
+
         self.current_conversation_id = Some(conversation_id);
         self.messages.clear();
         self.messages
             .push(Arc::new(Message::system("You are a helpful assistant.")));
         self.clear_streaming_ui_buffer();
+
+        // Try to get MessageList from cache (zero-copy switch)
+        if let Some(cached_list) = self.conversation_cache.take(conversation_id) {
+            tracing::debug!("Cache hit for conversation {}", conversation_id);
+            self.current_message_list = Some(cached_list);
+            // Messages still need to be loaded for API context
+            self.load_messages_for_context(conversation_id, cx);
+            cx.notify();
+            return;
+        }
+
+        // Cache miss: create new MessageList and load from database
+        tracing::debug!("Cache miss for conversation {}", conversation_id);
+        self.current_message_list =
+            Some(cx.new(|cx| MessageList::new_for_conversation(conversation_id, cx)));
 
         let db = database::get_db(cx).clone();
         let (tx, rx) = async_channel::unbounded();
@@ -218,16 +252,105 @@ impl ChatView {
                                 thinking_duration_ms: None,
                             }));
                         }
-                        // Reset scroll tracking BEFORE updating message list
-                        // so that set_messages sees stick_to_bottom = true
-                        this.message_list
-                            .update(cx, |list, _cx| list.reset_scroll_tracking());
+                        // Update the message list with loaded messages
                         this.update_message_list(cx);
                     });
                 });
             }
         })
         .detach();
+    }
+
+    /// Cache the current MessageList into the LRU cache.
+    fn cache_current_message_list(&mut self) {
+        if let (Some(conv_id), Some(list)) = (
+            self.current_conversation_id,
+            self.current_message_list.take(),
+        ) {
+            self.conversation_cache.insert(conv_id, list);
+        }
+    }
+
+    /// Load messages for API context only (when switching to a cached MessageList).
+    fn load_messages_for_context(&mut self, conversation_id: Uuid, cx: &mut Context<Self>) {
+        let db = database::get_db(cx).clone();
+        let (tx, rx) = async_channel::unbounded();
+
+        Tokio::spawn(cx, async move {
+            let messages_result = db.list_messages(conversation_id).await;
+            if let Ok(db_messages) = messages_result {
+                let mut messages_with_attachments = Vec::new();
+                for msg in db_messages {
+                    let attachments = if let Ok(db_attachments) = db.list_attachments(msg.id).await
+                    {
+                        let mut loaded_attachments = Vec::new();
+                        for db_att in db_attachments {
+                            if let Ok(data) = storage::load_attachment(&db_att.file_path).await {
+                                let att_type = match db_att.attachment_type {
+                                    db_attachment::AttachmentType::Image => AttachmentType::Image,
+                                };
+                                loaded_attachments.push(Attachment {
+                                    id: db_att.id,
+                                    attachment_type: att_type,
+                                    name: db_att.name,
+                                    mime_type: db_att.mime_type,
+                                    data,
+                                });
+                            }
+                        }
+                        loaded_attachments
+                    } else {
+                        Vec::new()
+                    };
+                    messages_with_attachments.push((msg, attachments));
+                }
+                let _ = tx.send(Ok(messages_with_attachments)).await;
+            } else {
+                let _ = tx.send(Err(messages_result.unwrap_err())).await;
+            }
+        })
+        .detach();
+
+        cx.spawn(async move |this, cx| {
+            if let Ok(Ok(messages_with_attachments)) = rx.recv().await {
+                let _ = cx.update(|app| {
+                    let _ = this.update(app, |this, _cx| {
+                        for (msg, attachments) in messages_with_attachments {
+                            let role = match msg.role {
+                                db_message::MessageRole::System => Role::System,
+                                db_message::MessageRole::User => Role::User,
+                                db_message::MessageRole::Assistant => Role::Assistant,
+                            };
+                            let status = match msg.status {
+                                db_message::MessageStatus::Pending => MessageStatus::Pending,
+                                db_message::MessageStatus::Streaming => MessageStatus::Streaming,
+                                db_message::MessageStatus::Done => MessageStatus::Done,
+                                db_message::MessageStatus::Error => {
+                                    MessageStatus::Error(msg.error_message.unwrap_or_default())
+                                }
+                            };
+                            this.messages.push(Arc::new(Message {
+                                id: msg.id,
+                                role,
+                                content: msg.content,
+                                attachments,
+                                status,
+                                created_at: msg.created_at,
+                                thinking_content: msg.thinking_content,
+                                thinking_duration_ms: None,
+                            }));
+                        }
+                        // No UI update needed - MessageList is already populated from cache
+                    });
+                });
+            }
+        })
+        .detach();
+    }
+
+    /// Remove a conversation from the cache (called when conversation is deleted).
+    pub fn remove_from_cache(&mut self, conversation_id: Uuid) {
+        self.conversation_cache.remove(conversation_id);
     }
 
     fn handle_user_message(
@@ -518,9 +641,11 @@ impl ChatView {
             thinking_start_time: None,
             thinking_duration_ms: None,
         });
-        self.message_list.update(cx, |list, cx| {
-            list.start_streaming(streaming_message, cx);
-        });
+        if let Some(message_list) = &self.current_message_list {
+            message_list.update(cx, |list, cx| {
+                list.start_streaming(streaming_message, cx);
+            });
+        }
 
         let messages: Vec<ChatMessage> = self
             .messages
@@ -557,9 +682,11 @@ impl ChatView {
                                 }
                                 if this.stream_is_current() {
                                     // Update thinking content in UI
-                                    this.message_list.update(cx, |list, cx| {
-                                        list.update_thinking_content(&content, cx);
-                                    });
+                                    if let Some(message_list) = &this.current_message_list {
+                                        message_list.update(cx, |list, cx| {
+                                            list.update_thinking_content(&content, cx);
+                                        });
+                                    }
                                 }
                             });
                         });
@@ -576,13 +703,15 @@ impl ChatView {
                                 }
                                 if this.stream_is_current() {
                                     // Mark thinking as done in UI
-                                    this.message_list.update(cx, |list, cx| {
-                                        let duration = this
-                                            .active_stream
-                                            .as_ref()
-                                            .and_then(|s| s.thinking_duration_ms);
-                                        list.finish_thinking(duration, cx);
-                                    });
+                                    let duration = this
+                                        .active_stream
+                                        .as_ref()
+                                        .and_then(|s| s.thinking_duration_ms);
+                                    if let Some(message_list) = &this.current_message_list {
+                                        message_list.update(cx, |list, cx| {
+                                            list.finish_thinking(duration, cx);
+                                        });
+                                    }
                                 }
                             });
                         });
@@ -707,9 +836,11 @@ impl ChatView {
             thinking_duration_ms: None,
         };
 
-        self.message_list.update(cx, |list, cx| {
-            list.start_streaming(streaming_message, cx);
-        });
+        if let Some(message_list) = &self.current_message_list {
+            message_list.update(cx, |list, cx| {
+                list.start_streaming(streaming_message, cx);
+            });
+        }
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -726,8 +857,8 @@ impl ChatView {
         let is_current = self.current_conversation_id == Some(conversation_id);
 
         if let Some(error) = error {
-            if is_current {
-                self.message_list.update(cx, |list, cx| {
+            if is_current && let Some(message_list) = &self.current_message_list {
+                message_list.update(cx, |list, cx| {
                     list.set_streaming_error(&error, cx);
                 });
             }
@@ -742,9 +873,11 @@ impl ChatView {
         }
 
         if is_current {
-            self.message_list.update(cx, |list, cx| {
-                list.finish_streaming(cx);
-            });
+            if let Some(message_list) = &self.current_message_list {
+                message_list.update(cx, |list, cx| {
+                    list.finish_streaming(cx);
+                });
+            }
             self.messages.push(Arc::new(Message {
                 id: message_id,
                 role: Role::Assistant,
@@ -803,16 +936,18 @@ impl ChatView {
             return;
         }
 
-        if let Some(error) = error.clone() {
-            if is_current {
-                self.message_list.update(cx, |list, cx| {
-                    list.set_streaming_error(&error, cx);
+        if let Some(ref error) = error {
+            if is_current && let Some(message_list) = &self.current_message_list {
+                message_list.update(cx, |list, cx| {
+                    list.set_streaming_error(error, cx);
                 });
             }
         } else if is_current {
-            self.message_list.update(cx, |list, cx| {
-                list.finish_streaming(cx);
-            });
+            if let Some(message_list) = &self.current_message_list {
+                message_list.update(cx, |list, cx| {
+                    list.finish_streaming(cx);
+                });
+            }
             self.messages.push(Arc::new(Message {
                 id: message_id,
                 role: Role::Assistant,
@@ -904,9 +1039,11 @@ impl ChatView {
             .cloned()
             .collect();
 
-        self.message_list.update(cx, |list, cx| {
-            list.set_messages(messages, cx);
-        });
+        if let Some(message_list) = &self.current_message_list {
+            message_list.update(cx, |list, cx| {
+                list.set_messages(messages, cx);
+            });
+        }
         self.sync_streaming_ui(cx);
         cx.notify();
     }
@@ -944,9 +1081,11 @@ impl ChatView {
         }
 
         let chunk = std::mem::take(&mut self.pending_stream_chunk);
-        self.message_list.update(cx, move |list, cx| {
-            list.update_streaming_content(&chunk, cx);
-        });
+        if let Some(message_list) = &self.current_message_list {
+            message_list.update(cx, move |list, cx| {
+                list.update_streaming_content(&chunk, cx);
+            });
+        }
     }
 }
 
@@ -962,7 +1101,7 @@ impl Render for ChatView {
             .overflow_hidden()
             .bg(theme.background)
             // Message list takes all available space
-            .child(self.message_list.clone())
+            .when_some(self.current_message_list.clone(), |el, list| el.child(list))
             // Input stays at bottom
             .child(
                 div()
