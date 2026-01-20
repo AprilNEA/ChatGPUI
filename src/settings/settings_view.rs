@@ -21,7 +21,10 @@ use gpui_component::{
     v_flex,
 };
 
-use super::{AuthMethod, IconPlacement, SendShortcut, get_settings, update_settings};
+use super::{
+    AccentColor, AppearanceMode, AuthMethod, IconPlacement, SendShortcut, get_settings,
+    update_settings,
+};
 
 /// Settings navigation category
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -127,6 +130,63 @@ impl SelectItem for IconPlacementOption {
     }
 }
 
+/// Appearance mode option for select
+#[derive(Clone, Debug)]
+struct AppearanceModeOption {
+    value: AppearanceMode,
+    label: String,
+}
+
+impl SelectItem for AppearanceModeOption {
+    type Value = AppearanceMode;
+
+    fn title(&self) -> SharedString {
+        self.label.clone().into()
+    }
+
+    fn value(&self) -> &Self::Value {
+        &self.value
+    }
+}
+
+/// Accent color option for select
+#[derive(Clone, Debug)]
+struct AccentColorOption {
+    value: AccentColor,
+    label: String,
+}
+
+impl SelectItem for AccentColorOption {
+    type Value = AccentColor;
+
+    fn title(&self) -> SharedString {
+        self.label.clone().into()
+    }
+
+    fn value(&self) -> &Self::Value {
+        &self.value
+    }
+}
+
+/// Font option for select
+#[derive(Clone, Debug)]
+struct FontOption {
+    value: Option<String>,
+    label: String,
+}
+
+impl SelectItem for FontOption {
+    type Value = Option<String>;
+
+    fn title(&self) -> SharedString {
+        self.label.clone().into()
+    }
+
+    fn value(&self) -> &Self::Value {
+        &self.value
+    }
+}
+
 // ============================================================================
 // Settings View
 // ============================================================================
@@ -144,6 +204,11 @@ pub struct SettingsView {
     shortcut_select: Entity<SelectState<SearchableVec<ShortcutOption>>>,
     icon_select: Entity<SelectState<SearchableVec<IconPlacementOption>>>,
     proxy_input: Entity<InputState>,
+    // Appearance settings states
+    appearance_mode_select: Entity<SelectState<SearchableVec<AppearanceModeOption>>>,
+    accent_color_select: Entity<SelectState<SearchableVec<AccentColorOption>>>,
+    ui_font_select: Entity<SelectState<SearchableVec<FontOption>>>,
+    code_font_select: Entity<SelectState<SearchableVec<FontOption>>>,
     // Subscriptions for auto-save
     _api_key_subscription: Subscription,
     _base_url_subscription: Subscription,
@@ -151,6 +216,10 @@ pub struct SettingsView {
     _language_subscription: Subscription,
     _shortcut_subscription: Subscription,
     _icon_subscription: Subscription,
+    _appearance_mode_subscription: Subscription,
+    _accent_color_subscription: Subscription,
+    _ui_font_subscription: Subscription,
+    _code_font_subscription: Subscription,
 }
 
 impl SettingsView {
@@ -162,6 +231,10 @@ impl SettingsView {
             current_icon_placement,
             current_proxy,
             selected_provider_id,
+            current_appearance_mode,
+            current_accent_color,
+            current_ui_font,
+            current_code_font,
         ) = {
             let settings = get_settings(cx);
             (
@@ -170,6 +243,10 @@ impl SettingsView {
                 settings.icon_placement.clone(),
                 settings.proxy.clone(),
                 settings.active_provider_id.clone(),
+                settings.appearance.mode.clone(),
+                settings.appearance.accent_color.clone(),
+                settings.appearance.ui_font.clone(),
+                settings.appearance.code_font.clone(),
             )
         };
 
@@ -262,6 +339,104 @@ impl SettingsView {
             state
         });
 
+        // Appearance settings - Mode select
+        let appearance_mode_options = vec![
+            AppearanceModeOption {
+                value: AppearanceMode::System,
+                label: t!("settings.appearance_system").to_string(),
+            },
+            AppearanceModeOption {
+                value: AppearanceMode::Light,
+                label: t!("settings.appearance_light").to_string(),
+            },
+            AppearanceModeOption {
+                value: AppearanceMode::Dark,
+                label: t!("settings.appearance_dark").to_string(),
+            },
+        ];
+        let appearance_mode_index = appearance_mode_options
+            .iter()
+            .position(|o| o.value == current_appearance_mode);
+        let appearance_mode_select = cx.new(|cx| {
+            SelectState::new(
+                SearchableVec::new(appearance_mode_options),
+                appearance_mode_index.map(IndexPath::new),
+                window,
+                cx,
+            )
+        });
+
+        // Appearance settings - Accent color select
+        let accent_color_options = vec![
+            AccentColorOption {
+                value: AccentColor::System,
+                label: t!("settings.accent_system").to_string(),
+            },
+            AccentColorOption {
+                value: AccentColor::Blue,
+                label: t!("settings.accent_blue").to_string(),
+            },
+            AccentColorOption {
+                value: AccentColor::Purple,
+                label: t!("settings.accent_purple").to_string(),
+            },
+            AccentColorOption {
+                value: AccentColor::Pink,
+                label: t!("settings.accent_pink").to_string(),
+            },
+            AccentColorOption {
+                value: AccentColor::Red,
+                label: t!("settings.accent_red").to_string(),
+            },
+            AccentColorOption {
+                value: AccentColor::Orange,
+                label: t!("settings.accent_orange").to_string(),
+            },
+            AccentColorOption {
+                value: AccentColor::Yellow,
+                label: t!("settings.accent_yellow").to_string(),
+            },
+            AccentColorOption {
+                value: AccentColor::Green,
+                label: t!("settings.accent_green").to_string(),
+            },
+        ];
+        let accent_color_index = accent_color_options
+            .iter()
+            .position(|o| o.value == current_accent_color);
+        let accent_color_select = cx.new(|cx| {
+            SelectState::new(
+                SearchableVec::new(accent_color_options),
+                accent_color_index.map(IndexPath::new),
+                window,
+                cx,
+            )
+        });
+
+        // Appearance settings - Font selects
+        let font_options = Self::get_font_options(cx);
+        let ui_font_index = font_options.iter().position(|o| o.value == current_ui_font);
+        let ui_font_select = cx.new(|cx| {
+            SelectState::new(
+                SearchableVec::new(font_options.clone()),
+                ui_font_index.map(IndexPath::new),
+                window,
+                cx,
+            )
+        });
+
+        let code_font_index = font_options
+            .iter()
+            .position(|o| o.value == current_code_font);
+        let code_font_select = cx.new(|cx| {
+            SelectState::new(
+                SearchableVec::new(font_options),
+                code_font_index.map(IndexPath::new),
+                window,
+                cx,
+            )
+        });
+
         // Subscribe to input changes for auto-save
         let _api_key_subscription = cx.subscribe_in(
             &api_key_input,
@@ -323,6 +498,46 @@ impl SettingsView {
             },
         );
 
+        let _appearance_mode_subscription = cx.subscribe_in(
+            &appearance_mode_select,
+            window,
+            |this, _, event: &SelectEvent<SearchableVec<AppearanceModeOption>>, window, cx| {
+                if let SelectEvent::Confirm(Some(mode)) = event {
+                    this.save_appearance_mode(mode.clone(), window, cx);
+                }
+            },
+        );
+
+        let _accent_color_subscription = cx.subscribe_in(
+            &accent_color_select,
+            window,
+            |this, _, event: &SelectEvent<SearchableVec<AccentColorOption>>, _window, cx| {
+                if let SelectEvent::Confirm(Some(color)) = event {
+                    this.save_accent_color(color.clone(), cx);
+                }
+            },
+        );
+
+        let _ui_font_subscription = cx.subscribe_in(
+            &ui_font_select,
+            window,
+            |this, _, event: &SelectEvent<SearchableVec<FontOption>>, _window, cx| {
+                if let SelectEvent::Confirm(Some(font)) = event {
+                    this.save_ui_font(font.clone(), cx);
+                }
+            },
+        );
+
+        let _code_font_subscription = cx.subscribe_in(
+            &code_font_select,
+            window,
+            |this, _, event: &SelectEvent<SearchableVec<FontOption>>, _window, cx| {
+                if let SelectEvent::Confirm(Some(font)) = event {
+                    this.save_code_font(font.clone(), cx);
+                }
+            },
+        );
+
         let mut view = Self {
             current_category: SettingsCategory::General,
             selected_provider_id,
@@ -333,12 +548,20 @@ impl SettingsView {
             shortcut_select,
             icon_select,
             proxy_input,
+            appearance_mode_select,
+            accent_color_select,
+            ui_font_select,
+            code_font_select,
             _api_key_subscription,
             _base_url_subscription,
             _proxy_subscription,
             _language_subscription,
             _shortcut_subscription,
             _icon_subscription,
+            _appearance_mode_subscription,
+            _accent_color_subscription,
+            _ui_font_subscription,
+            _code_font_subscription,
         };
 
         // Load provider data into inputs
@@ -416,6 +639,69 @@ impl SettingsView {
         update_settings(cx, |settings| {
             settings.auto_scroll = value;
         });
+    }
+
+    fn save_appearance_mode(
+        &mut self,
+        value: AppearanceMode,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        update_settings(cx, |settings| {
+            settings.appearance.mode = value;
+        });
+        // Apply the new appearance mode immediately
+        let appearance = get_settings(cx).appearance.clone();
+        appearance.apply_mode(Some(window), cx);
+    }
+
+    fn save_accent_color(&mut self, value: AccentColor, cx: &mut Context<Self>) {
+        update_settings(cx, |settings| {
+            settings.appearance.accent_color = value;
+        });
+        // Accent color is not yet implemented in the theme system
+    }
+
+    fn save_ui_font(&mut self, value: Option<String>, cx: &mut Context<Self>) {
+        update_settings(cx, |settings| {
+            settings.appearance.ui_font = value;
+        });
+        // Apply the new UI font immediately
+        let appearance = get_settings(cx).appearance.clone();
+        appearance.apply_ui_font(cx);
+    }
+
+    fn save_code_font(&mut self, value: Option<String>, cx: &mut Context<Self>) {
+        update_settings(cx, |settings| {
+            settings.appearance.code_font = value;
+        });
+        // Apply the new code font immediately
+        let appearance = get_settings(cx).appearance.clone();
+        appearance.apply_code_font(cx);
+    }
+
+    /// Get available font options from the system
+    fn get_font_options(cx: &App) -> Vec<FontOption> {
+        let mut fonts = vec![FontOption {
+            value: None,
+            label: t!("settings.system_default").to_string(),
+        }];
+
+        // Get all system fonts from GPUI TextSystem
+        let system_fonts = cx.text_system().all_font_names();
+
+        for font_name in system_fonts {
+            // Skip internal/system fonts that start with "."
+            if font_name.starts_with('.') {
+                continue;
+            }
+            fonts.push(FontOption {
+                value: Some(font_name.clone()),
+                label: font_name,
+            });
+        }
+
+        fonts
     }
 
     fn select_category(&mut self, category: SettingsCategory, cx: &mut Context<Self>) {
@@ -656,6 +942,54 @@ impl SettingsView {
         )
     }
 
+    // ========================================================================
+    // Appearance Settings Page
+    // ========================================================================
+
+    fn render_appearance_page(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
+        // Pre-compute all translated strings to avoid lifetime issues
+        let appearance_mode_label = t!("settings.appearance_mode").to_string();
+        let accent_color_label = t!("settings.accent_color").to_string();
+        let ui_font_label = t!("settings.ui_font").to_string();
+        let ui_font_desc = t!("settings.ui_font_desc").to_string();
+        let code_font_label = t!("settings.code_font").to_string();
+        let code_font_desc = t!("settings.code_font_desc").to_string();
+
+        self.render_settings_page(
+            v_flex()
+                // Appearance mode row
+                .child(self.render_settings_row(
+                    appearance_mode_label,
+                    Select::new(&self.appearance_mode_select).w(px(140.)),
+                    cx,
+                ))
+                .child(Divider::horizontal())
+                // Accent color row
+                .child(self.render_settings_row(
+                    accent_color_label,
+                    Select::new(&self.accent_color_select).w(px(140.)),
+                    cx,
+                ))
+                .child(Divider::horizontal())
+                // UI font row with description
+                .child(self.render_settings_row_with_desc(
+                    ui_font_label,
+                    ui_font_desc,
+                    Select::new(&self.ui_font_select).w(px(180.)),
+                    cx,
+                ))
+                .child(Divider::horizontal())
+                // Code font row with description
+                .child(self.render_settings_row_with_desc(
+                    code_font_label,
+                    code_font_desc,
+                    Select::new(&self.code_font_select).w(px(180.)),
+                    cx,
+                )),
+            cx,
+        )
+    }
+
     fn render_provider_list(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
         let settings = get_settings(cx);
@@ -701,7 +1035,7 @@ impl SettingsView {
                                     h_flex()
                                         .gap_2()
                                         .items_center()
-                                        .child(self.provider_icon(&provider_id))
+                                        .child(Self::provider_icon(&provider_id, theme))
                                         .child(Label::new(provider_name)),
                                 )
                         }),
@@ -718,25 +1052,39 @@ impl SettingsView {
             )
     }
 
-    fn provider_icon(&self, provider_id: &str) -> impl IntoElement {
-        let icon = match provider_id {
-            "anthropic" => "A\\",
-            "openai" => "◎",
-            "azure_openai" => "△",
-            "deepseek" => "◈",
-            "google_ai" => "G",
-            "groq" => "9",
-            "mistral" => "M",
-            "ollama" => "🦙",
-            "openrouter" => "◁",
-            _ => "•",
-        };
+    fn provider_icon(provider_id: &str, theme: &gpui_component::Theme) -> impl IntoElement {
+        use crate::assets::{IntoIcon, LlmProvider};
+        use std::str::FromStr;
+
+        let provider = LlmProvider::from_str(provider_id).ok();
+
         h_flex()
-            .size_8()
+            .size_6()
             .items_center()
             .justify_center()
-            .text_base()
-            .child(icon)
+            .when_some(provider, |el, p| {
+                el.child(p.icon().size_5().text_color(theme.foreground))
+            })
+            .when(provider.is_none(), |el| {
+                el.child(
+                    h_flex()
+                        .size_5()
+                        .rounded_sm()
+                        .bg(theme.muted)
+                        .items_center()
+                        .justify_center()
+                        .text_xs()
+                        .text_color(theme.muted_foreground)
+                        .child(
+                            provider_id
+                                .chars()
+                                .next()
+                                .unwrap_or('?')
+                                .to_uppercase()
+                                .to_string(),
+                        ),
+                )
+            })
     }
 
     fn render_provider_detail(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -879,9 +1227,7 @@ impl SettingsView {
         match self.current_category {
             SettingsCategory::General => self.render_general_page(cx).into_any_element(),
             SettingsCategory::Provider => self.render_provider_page(cx).into_any_element(),
-            SettingsCategory::Appearance => self
-                .render_placeholder_page(t!("settings.appearance_settings").to_string(), cx)
-                .into_any_element(),
+            SettingsCategory::Appearance => self.render_appearance_page(cx).into_any_element(),
             SettingsCategory::Prompts => self
                 .render_placeholder_page(t!("settings.prompts_settings").to_string(), cx)
                 .into_any_element(),

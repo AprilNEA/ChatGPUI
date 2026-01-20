@@ -329,3 +329,159 @@ thinking.in_progress:
 thinking.duration:
   en: "Thought for"
   zh-CN: "思考"
+
+# Appearance Settings
+settings.appearance_mode:
+  en: "Appearance"
+  zh-CN: "外观"
+
+settings.accent_color:
+  en: "Accent Color"
+  zh-CN: "主题色"
+
+settings.ui_font:
+  en: "App Font"
+  zh-CN: "应用字体"
+
+settings.ui_font_desc:
+  en: "Interface font"
+  zh-CN: "应用界面字体"
+
+settings.code_font:
+  en: "Code Font"
+  zh-CN: "代码字体"
+
+settings.code_font_desc:
+  en: "Code blocks and editor font"
+  zh-CN: "代码块和编辑器字体"
+
+settings.system_default:
+  en: "System Default"
+  zh-CN: "系统默认"
+
+# Appearance mode options
+settings.appearance_system:
+  en: "Follow System"
+  zh-CN: "跟随系统"
+
+settings.appearance_light:
+  en: "Light"
+  zh-CN: "浅色"
+
+settings.appearance_dark:
+  en: "Dark"
+  zh-CN: "深色"
+
+# Accent color options
+settings.accent_system:
+  en: "Follow System"
+  zh-CN: "跟随系统"
+
+settings.accent_blue:
+  en: "Blue"
+  zh-CN: "蓝色"
+
+settings.accent_purple:
+  en: "Purple"
+  zh-CN: "紫色"
+
+settings.accent_pink:
+  en: "Pink"
+  zh-CN: "粉色"
+
+settings.accent_red:
+  en: "Red"
+  zh-CN: "红色"
+
+settings.accent_orange:
+  en: "Orange"
+  zh-CN: "橙色"
+
+settings.accent_yellow:
+  en: "Yellow"
+  zh-CN: "黄色"
+
+settings.accent_green:
+  en: "Green"
+  zh-CN: "绿色"
+
+# Conversation Context Menu
+context.rename:
+  en: "Rename"
+  zh-CN: "重命名"
+
+context.favorite:
+  en: "Favorite"
+  zh-CN: "收藏"
+
+context.unfavorite:
+  en: "Unfavorite"
+  zh-CN: "取消收藏"
+
+context.generate_title:
+  en: "Generate Title"
+  zh-CN: "生成标题"
+
+context.title_max_lines:
+  en: "Max Title Lines"
+  zh-CN: "标题最大显示行数"
+
+context.lines_1:
+  en: "1 Line"
+  zh-CN: "1 行"
+
+context.lines_2:
+  en: "2 Lines"
+  zh-CN: "2 行"
+
+context.lines_3:
+  en: "3 Lines"
+  zh-CN: "3 行"
+
+context.clone:
+  en: "Clone Conversation"
+  zh-CN: "克隆对话"
+
+context.hide_icon:
+  en: "Hide Icon"
+  zh-CN: "隐藏图标"
+
+context.show_icon:
+  en: "Show Icon"
+  zh-CN: "显示图标"
+
+context.copy_text:
+  en: "Copy Conversation Text"
+  zh-CN: "复制对话文本"
+
+context.copy_id:
+  en: "Copy Conversation ID"
+  zh-CN: "复制对话 ID"
+
+context.copy_link:
+  en: "Copy App Link"
+  zh-CN: "复制应用链接"
+
+context.export:
+  en: "Export Conversation"
+  zh-CN: "导出对话"
+
+context.export_json:
+  en: "Export as JSON"
+  zh-CN: "导出为 JSON"
+
+context.export_markdown:
+  en: "Export as Markdown"
+  zh-CN: "导出为 Markdown"
+
+context.export_txt:
+  en: "Export as Text"
+  zh-CN: "导出为文本"
+
+context.delete:
+  en: "Delete Conversation"
+  zh-CN: "删除对话"
+
+context.delete_all:
+  en: "Delete All Conversations"
+  zh-CN: "删除所有对话"

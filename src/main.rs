@@ -31,7 +31,7 @@ use gpui_component::{Root, Theme, ThemeRegistry};
 use crate::assets::Assets;
 
 use about::{OpenAbout, open_about_window};
-use settings::{OpenSettings, open_settings_window};
+use settings::{OpenSettings, apply_appearance_settings, open_settings_window};
 
 actions!(
     app,
@@ -116,6 +116,8 @@ fn main() {
             if let Some(theme) = ThemeRegistry::global(cx).themes().get(&theme_name).cloned() {
                 Theme::global_mut(cx).apply_config(&theme);
             }
+            // Apply saved appearance settings after theme is loaded
+            apply_appearance_settings(None, cx);
         }) {
             tracing::error!("Failed to watch themes directory: {}", err);
         }

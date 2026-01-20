@@ -23,42 +23,144 @@ use uuid::Uuid;
 
 use crate::database::{self, conversation};
 
-// Actions for conversation context menu
-actions!(
-    conversation_context,
-    [
-        RenameConversation,
-        ToggleFavorite,
-        GenerateTitle,
-        CloneConversation,
-        ToggleIcon,
-        CopyConversationText,
-        CopyConversationId,
-        CopyAppLink,
-        ExportJson,
-        ExportMarkdown,
-        ExportText,
-        DeleteConversation,
-        DeleteAllConversations,
-        SetTitleLines1,
-        SetTitleLines2,
-        SetTitleLines3,
-    ]
-);
-
 /// Event emitted when a conversation is selected
 pub struct ConversationSelectedEvent {
     pub conversation_id: Option<Uuid>,
 }
 
-/// Context menu state for a conversation
-#[allow(dead_code)]
-struct ContextMenuState {
+/// Build the context menu for a conversation item.
+/// This is extracted as a separate function to be used with RightClickMenu.
+fn build_conversation_context_menu(
     conversation_id: Uuid,
-    position: Point<Pixels>,
-    menu: Entity<PopupMenu>,
-    /// Subscription to dismiss event
-    _subscription: Subscription,
+    window: &mut Window,
+    cx: &mut App,
+) -> Entity<PopupMenu> {
+    use gpui_component::menu::PopupMenuItem;
+
+    // Create copies for each closure
+    let id_for_rename = conversation_id;
+    let id_for_favorite = conversation_id;
+    let id_for_generate = conversation_id;
+    let id_for_clone = conversation_id;
+    let id_for_icon = conversation_id;
+    let id_for_copy_text = conversation_id;
+    let id_for_copy_id = conversation_id.to_string();
+    let id_for_copy_link = format!("chatgpui://conversation/{}", conversation_id);
+    let id_for_export_json = conversation_id;
+    let id_for_export_md = conversation_id;
+    let id_for_export_txt = conversation_id;
+    let id_for_delete = conversation_id;
+
+    PopupMenu::build(window, cx, move |menu, window, cx| {
+        menu.item(
+            PopupMenuItem::new(t!("context.rename"))
+                .icon(IconName::Settings2)
+                .on_click(move |_, _, _cx| {
+                    tracing::info!("Rename conversation: {}", id_for_rename);
+                }),
+        )
+        .item(
+            PopupMenuItem::new(t!("context.favorite"))
+                .icon(IconName::Star)
+                .on_click(move |_, _, _cx| {
+                    tracing::info!("Toggle favorite: {}", id_for_favorite);
+                }),
+        )
+        .item(
+            PopupMenuItem::new(t!("context.generate_title"))
+                .icon(IconName::Bot)
+                .on_click(move |_, _, _cx| {
+                    tracing::info!("Generate title: {}", id_for_generate);
+                }),
+        )
+        .submenu(t!("context.title_max_lines"), window, cx, |menu, _, _| {
+            menu.item(PopupMenuItem::new(t!("context.lines_1")).on_click(|_, _, _| {}))
+                .item(PopupMenuItem::new(t!("context.lines_2")).on_click(|_, _, _| {}))
+                .item(PopupMenuItem::new(t!("context.lines_3")).on_click(|_, _, _| {}))
+        })
+        .separator()
+        .item(
+            PopupMenuItem::new(t!("context.clone"))
+                .icon(IconName::Copy)
+                .on_click(move |_, _, _cx| {
+                    tracing::info!("Clone conversation: {}", id_for_clone);
+                }),
+        )
+        .item(
+            PopupMenuItem::new(t!("context.hide_icon"))
+                .icon(IconName::EyeOff)
+                .on_click(move |_, _, _cx| {
+                    tracing::info!("Toggle icon: {}", id_for_icon);
+                }),
+        )
+        .separator()
+        .item(
+            PopupMenuItem::new(t!("context.copy_text"))
+                .icon(IconName::File)
+                .on_click(move |_, _, _cx| {
+                    tracing::info!("Copy text: {}", id_for_copy_text);
+                }),
+        )
+        .item(
+            PopupMenuItem::new(t!("context.copy_id"))
+                .icon(IconName::Copy)
+                .on_click({
+                    let id_str = id_for_copy_id.clone();
+                    move |_, _, cx| {
+                        cx.write_to_clipboard(ClipboardItem::new_string(id_str.clone()));
+                    }
+                }),
+        )
+        .item(
+            PopupMenuItem::new(t!("context.copy_link"))
+                .icon(IconName::ExternalLink)
+                .on_click({
+                    let link = id_for_copy_link.clone();
+                    move |_, _, cx| {
+                        cx.write_to_clipboard(ClipboardItem::new_string(link.clone()));
+                    }
+                }),
+        )
+        .separator()
+        .submenu(t!("context.export"), window, cx, move |menu, _, _| {
+            menu.item(
+                PopupMenuItem::new(t!("context.export_json"))
+                    .icon(IconName::File)
+                    .on_click(move |_, _, _cx| {
+                        tracing::info!("Export JSON: {}", id_for_export_json);
+                    }),
+            )
+            .item(
+                PopupMenuItem::new(t!("context.export_markdown"))
+                    .icon(IconName::File)
+                    .on_click(move |_, _, _cx| {
+                        tracing::info!("Export Markdown: {}", id_for_export_md);
+                    }),
+            )
+            .item(
+                PopupMenuItem::new(t!("context.export_txt"))
+                    .icon(IconName::File)
+                    .on_click(move |_, _, _cx| {
+                        tracing::info!("Export Text: {}", id_for_export_txt);
+                    }),
+            )
+        })
+        .separator()
+        .item(
+            PopupMenuItem::new(t!("context.delete"))
+                .icon(IconName::Delete)
+                .on_click(move |_, _, _cx| {
+                    tracing::info!("Delete conversation: {}", id_for_delete);
+                }),
+        )
+        .item(
+            PopupMenuItem::new(t!("context.delete_all"))
+                .icon(IconName::Delete)
+                .on_click(|_, _, _cx| {
+                    tracing::info!("Delete all conversations");
+                }),
+        )
+    })
 }
 
 /// Virtual list item type
@@ -78,6 +180,16 @@ enum ListItemKind {
 const GROUP_HEADER_HEIGHT: f32 = 28.0;
 const CONVERSATION_ITEM_HEIGHT: f32 = 40.0;
 
+/// Context menu state
+struct ContextMenuState {
+    /// The menu entity
+    menu: Entity<PopupMenu>,
+    /// Position where the menu was triggered
+    position: Point<Pixels>,
+    /// Subscription to dismiss event
+    _subscription: Subscription,
+}
+
 /// Chat history sidebar component
 pub struct ChatSidebar {
     search_input: Entity<InputState>,
@@ -89,7 +201,7 @@ pub struct ChatSidebar {
     /// Pre-calculated sizes for virtual list
     item_sizes: Rc<Vec<Size<Pixels>>>,
     scroll_handle: VirtualListScrollHandle,
-    /// Context menu state
+    /// Context menu state (if open)
     context_menu: Option<ContextMenuState>,
 }
 
@@ -255,173 +367,28 @@ impl ChatSidebar {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        use gpui_component::menu::PopupMenuItem;
+        let menu = build_conversation_context_menu(conversation_id, window, cx);
 
-        // Create copies for each closure that needs the id
-        let id_for_rename = conversation_id;
-        let id_for_favorite = conversation_id;
-        let id_for_generate = conversation_id;
-        let id_for_clone = conversation_id;
-        let id_for_icon = conversation_id;
-        let id_for_copy_text = conversation_id;
-        let id_for_copy_id = conversation_id.to_string();
-        let id_for_copy_link = format!("chatgpui://conversation/{}", conversation_id);
-        let id_for_export_json = conversation_id;
-        let id_for_export_md = conversation_id;
-        let id_for_export_txt = conversation_id;
-        let id_for_delete = conversation_id;
-
-        let menu = PopupMenu::build(window, cx, move |menu, window, cx| {
-            menu.item(
-                PopupMenuItem::new(t!("context.rename"))
-                    .icon(IconName::Settings2)
-                    .on_click(move |_, _, _cx| {
-                        // TODO: Implement rename dialog
-                        tracing::info!("Rename conversation: {}", id_for_rename);
-                    }),
-            )
-            .item(
-                PopupMenuItem::new(t!("context.favorite"))
-                    .icon(IconName::Star)
-                    .on_click(move |_, _, _cx| {
-                        // TODO: Implement favorite toggle
-                        tracing::info!("Toggle favorite: {}", id_for_favorite);
-                    }),
-            )
-            .item(
-                PopupMenuItem::new(t!("context.generate_title"))
-                    .icon(IconName::Bot)
-                    .on_click(move |_, _, _cx| {
-                        // TODO: Implement title generation
-                        tracing::info!("Generate title: {}", id_for_generate);
-                    }),
-            )
-            .submenu(t!("context.title_max_lines"), window, cx, |menu, _, _| {
-                menu.item(PopupMenuItem::new(t!("context.lines_1")).on_click(|_, _, _| {}))
-                    .item(PopupMenuItem::new(t!("context.lines_2")).on_click(|_, _, _| {}))
-                    .item(PopupMenuItem::new(t!("context.lines_3")).on_click(|_, _, _| {}))
-            })
-            .separator()
-            .item(
-                PopupMenuItem::new(t!("context.clone"))
-                    .icon(IconName::Copy)
-                    .on_click(move |_, _, _cx| {
-                        // TODO: Implement clone
-                        tracing::info!("Clone conversation: {}", id_for_clone);
-                    }),
-            )
-            .item(
-                PopupMenuItem::new(t!("context.hide_icon"))
-                    .icon(IconName::EyeOff)
-                    .on_click(move |_, _, _cx| {
-                        // TODO: Implement hide icon
-                        tracing::info!("Toggle icon: {}", id_for_icon);
-                    }),
-            )
-            .separator()
-            .item(
-                PopupMenuItem::new(t!("context.copy_text"))
-                    .icon(IconName::File)
-                    .on_click(move |_, _, _cx| {
-                        // TODO: Implement copy text
-                        tracing::info!("Copy text: {}", id_for_copy_text);
-                    }),
-            )
-            .item(
-                PopupMenuItem::new(t!("context.copy_id"))
-                    .icon(IconName::Copy)
-                    .on_click({
-                        let id_str = id_for_copy_id.clone();
-                        move |_, _, cx| {
-                            cx.write_to_clipboard(ClipboardItem::new_string(id_str.clone()));
-                        }
-                    }),
-            )
-            .item(
-                PopupMenuItem::new(t!("context.copy_link"))
-                    .icon(IconName::ExternalLink)
-                    .on_click({
-                        let link = id_for_copy_link.clone();
-                        move |_, _, cx| {
-                            cx.write_to_clipboard(ClipboardItem::new_string(link.clone()));
-                        }
-                    }),
-            )
-            .separator()
-            .submenu(t!("context.export"), window, cx, move |menu, _, _| {
-                menu.item(
-                    PopupMenuItem::new(t!("context.export_json"))
-                        .icon(IconName::File)
-                        .on_click(move |_, _, _cx| {
-                            // TODO: Implement JSON export
-                            tracing::info!("Export JSON: {}", id_for_export_json);
-                        }),
-                )
-                .item(
-                    PopupMenuItem::new(t!("context.export_markdown"))
-                        .icon(IconName::File)
-                        .on_click(move |_, _, _cx| {
-                            // TODO: Implement Markdown export
-                            tracing::info!("Export Markdown: {}", id_for_export_md);
-                        }),
-                )
-                .item(
-                    PopupMenuItem::new(t!("context.export_txt"))
-                        .icon(IconName::File)
-                        .on_click(move |_, _, _cx| {
-                            // TODO: Implement text export
-                            tracing::info!("Export Text: {}", id_for_export_txt);
-                        }),
-                )
-            })
-            .separator()
-            .item(
-                PopupMenuItem::new(t!("context.delete"))
-                    .icon(IconName::Delete)
-                    .on_click(move |_, _, _cx| {
-                        // TODO: Implement delete
-                        tracing::info!("Delete conversation: {}", id_for_delete);
-                    }),
-            )
-            .item(
-                PopupMenuItem::new(t!("context.delete_all"))
-                    .icon(IconName::Delete)
-                    .on_click(|_, _, _cx| {
-                        // TODO: Implement delete all
-                        tracing::info!("Delete all conversations");
-                    }),
-            )
-        });
-
-        // Subscribe to dismiss event - store subscription to keep it alive
-        let subscription = cx.subscribe_in(&menu, window, |this, _, _: &DismissEvent, _, cx| {
-            this.context_menu = None;
-            cx.notify();
-        });
-
-        // Focus the menu after two frames to ensure deferred rendering is complete
-        // This is critical for smooth menu appearance (Zed's pattern)
+        // Subscribe to dismiss event with double-frame focus scheduling (Zed's pattern)
         let focus_handle = menu.focus_handle(cx);
-        window.on_next_frame(move |window, _app| {
-            window.on_next_frame(move |window, _app| {
+        let subscription =
+            cx.subscribe_in(&menu, window, |this, _, _: &DismissEvent, _window, cx| {
+                this.context_menu = None;
+                cx.notify();
+            });
+
+        // Double-frame focus scheduling for smooth menu appearance
+        window.on_next_frame(move |window, _cx| {
+            window.on_next_frame(move |window, _cx| {
                 focus_handle.focus(window);
             });
         });
 
         self.context_menu = Some(ContextMenuState {
-            conversation_id,
-            position,
             menu,
+            position,
             _subscription: subscription,
         });
-
-        cx.notify();
-    }
-
-    /// Close the context menu
-    #[allow(dead_code)]
-    fn close_context_menu(&mut self, cx: &mut Context<Self>) {
-        self.context_menu = None;
         cx.notify();
     }
 
@@ -462,10 +429,10 @@ impl ChatSidebar {
                     "conversation-list",
                     item_sizes,
                     move |_this, visible_range, _scroll_handle, cx| {
-                        use crate::assets::BrandAssets;
+                        use crate::assets::{IntoIcon, LlmProvider};
+                        use std::str::FromStr;
 
                         let theme = cx.theme();
-                        let is_dark = theme.mode.is_dark();
 
                         visible_range
                             .map(|ix| {
@@ -489,8 +456,7 @@ impl ChatSidebar {
                                     } => {
                                         let is_selected = selected == Some(*id);
                                         let item_id = *id;
-                                        let icon_path =
-                                            BrandAssets::provider_icon(provider_id, is_dark);
+                                        let provider = LlmProvider::from_str(provider_id).ok();
 
                                         div()
                                             .id(SharedString::from(format!("conv-{}", item_id)))
@@ -531,11 +497,9 @@ impl ChatSidebar {
                                                             .gap_2()
                                                             .items_center()
                                                             .overflow_hidden()
-                                                            .child(if let Some(path) = icon_path {
-                                                                svg()
-                                                                    .path(path)
-                                                                    .size(px(16.))
-                                                                    .flex_shrink_0()
+                                                            .child(if let Some(p) = provider {
+                                                                p.icon()
+                                                                    .size_4()
                                                                     .text_color(theme.foreground)
                                                                     .into_any_element()
                                                             } else {

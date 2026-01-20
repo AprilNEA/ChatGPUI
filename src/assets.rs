@@ -2,23 +2,44 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 
-use gpui::{AssetSource, SharedString};
+use std::borrow::Cow;
+
+use gpui::{AnyElement, AssetSource, IntoElement, SharedString};
+use gpui_component::{Icon, IconNamed};
 use rust_embed::RustEmbed;
+use strum::{Display, EnumString};
+
+/// Helper trait to convert IconNamed types to Icon
+pub trait IntoIcon: IconNamed + Copy {
+    fn icon(self) -> Icon {
+        Icon::new(self)
+    }
+}
+
+impl<T: IconNamed + Copy> IntoIcon for T {}
 
 #[derive(RustEmbed)]
 #[folder = "assets"]
 #[include = "icons/**/*.svg"]
-#[include = "icons/**/*.png"]
-#[include = "*.svg"]
-#[include = "*.png"]
 pub struct Assets;
+
+impl Assets {
+    fn rewrite_path(path: &str) -> Cow<'_, str> {
+        if path.starts_with("icons/") && path.matches('/').count() == 1 {
+            Cow::Owned(path.replacen("icons/", "icons/ui/", 1))
+        } else {
+            Cow::Borrowed(path)
+        }
+    }
+}
 
 impl AssetSource for Assets {
     fn load(&self, path: &str) -> gpui::Result<Option<std::borrow::Cow<'static, [u8]>>> {
         if path.is_empty() {
             return Ok(None);
         }
-        Self::get(path)
+
+        Self::get(&Self::rewrite_path(path))
             .map(|f| Some(f.data))
             .ok_or_else(|| anyhow::anyhow!("asset not found: {}", path))
     }
@@ -31,160 +52,216 @@ impl AssetSource for Assets {
     }
 }
 
-/// Brand icons for LLM providers
-#[derive(RustEmbed)]
-#[folder = "assets/icons/brand"]
-#[include = "*.svg"]
-pub struct BrandAssets;
+/// LLM Provider enum
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, EnumString, Display)]
+#[strum(serialize_all = "snake_case", ascii_case_insensitive)]
+pub enum LlmProvider {
+    Anthropic,
+    #[strum(serialize = "openai")]
+    OpenAI,
+    #[strum(serialize = "azure_openai")]
+    AzureOpenAI,
+    #[strum(serialize = "deepseek")]
+    DeepSeek,
+    #[strum(serialize = "google_ai", serialize = "gemini")]
+    GoogleAI,
+    Mistral,
+    Ollama,
+    #[strum(serialize = "openrouter")]
+    OpenRouter,
+    #[strum(serialize = "xai", serialize = "grok")]
+    Xai,
+    Perplexity,
+    #[strum(serialize = "kimi", serialize = "moonshot")]
+    Kimi,
+    Groq,
+    #[strum(serialize = "together", serialize = "together_ai")]
+    TogetherAI,
+    Cohere,
+    #[strum(serialize = "fireworks", serialize = "fireworks_ai")]
+    FireworksAI,
+}
 
-impl BrandAssets {
-    /// Get the icon path for a provider ID
-    /// Returns the appropriate icon based on provider and theme
-    pub fn provider_icon(provider_id: &str, is_dark: bool) -> Option<&'static str> {
-        match provider_id {
-            "anthropic" => Some("icons/brand/anthropic.svg"),
-            "openai" | "azure_openai" => Some("icons/brand/openai.svg"),
-            "deepseek" => Some("icons/brand/deepseek.svg"),
-            "google_ai" => Some("icons/brand/google.svg"),
-            "mistral" => Some("icons/brand/mistral-ai.svg"),
-            "ollama" => Some(if is_dark {
-                "icons/brand/ollama-dark.svg"
-            } else {
-                "icons/brand/ollama-light.svg"
-            }),
-            "openrouter" => Some(if is_dark {
-                "icons/brand/openrouter-dark.svg"
-            } else {
-                "icons/brand/openrouter-light.svg"
-            }),
-            "xai" | "grok" => Some(if is_dark {
-                "icons/brand/xai-dark.svg"
-            } else {
-                "icons/brand/xai-light.svg"
-            }),
-            "perplexity" => Some("icons/brand/perplexity.svg"),
-            "kimi" | "moonshot" => Some("icons/brand/kimi-icon.svg"),
-            _ => None,
+impl LlmProvider {
+    /// Get the display name for this provider
+    #[allow(dead_code)]
+    pub fn display_name(&self) -> &'static str {
+        match self {
+            Self::Anthropic => "Anthropic",
+            Self::OpenAI => "OpenAI",
+            Self::AzureOpenAI => "Azure OpenAI",
+            Self::DeepSeek => "DeepSeek",
+            Self::GoogleAI => "Google AI",
+            Self::Mistral => "Mistral",
+            Self::Ollama => "Ollama",
+            Self::OpenRouter => "OpenRouter",
+            Self::Xai => "xAI",
+            Self::Perplexity => "Perplexity",
+            Self::Kimi => "Kimi",
+            Self::Groq => "Groq",
+            Self::TogetherAI => "Together AI",
+            Self::Cohere => "Cohere",
+            Self::FireworksAI => "Fireworks AI",
         }
     }
 
-    /// Check if a provider has a brand icon
+    /// Get the default base URL for this provider
     #[allow(dead_code)]
-    pub fn has_icon(provider_id: &str) -> bool {
-        matches!(
-            provider_id,
-            "anthropic"
-                | "openai"
-                | "azure_openai"
-                | "deepseek"
-                | "google_ai"
-                | "mistral"
-                | "ollama"
-                | "openrouter"
-                | "xai"
-                | "grok"
-                | "perplexity"
-                | "kimi"
-                | "moonshot"
-        )
+    pub fn default_base_url(&self) -> &'static str {
+        match self {
+            Self::Anthropic => "https://api.anthropic.com/v1",
+            Self::OpenAI => "https://api.openai.com/v1",
+            Self::AzureOpenAI => "", // Requires custom endpoint
+            Self::DeepSeek => "https://api.deepseek.com/v1",
+            Self::GoogleAI => "https://generativelanguage.googleapis.com/v1beta",
+            Self::Mistral => "https://api.mistral.ai/v1",
+            Self::Ollama => "http://localhost:11434/api",
+            Self::OpenRouter => "https://openrouter.ai/api/v1",
+            Self::Xai => "https://api.x.ai/v1",
+            Self::Perplexity => "https://api.perplexity.ai",
+            Self::Kimi => "https://api.moonshot.cn/v1",
+            Self::Groq => "https://api.groq.com/openai/v1",
+            Self::TogetherAI => "https://api.together.xyz/v1",
+            Self::Cohere => "https://api.cohere.ai/v1",
+            Self::FireworksAI => "https://api.fireworks.ai/inference/v1",
+        }
     }
 }
 
-/// Language icons for code blocks
-#[derive(RustEmbed)]
-#[folder = "assets/icons/language"]
-#[include = "*.svg"]
-#[allow(dead_code)]
-pub struct LanguageAssets;
-
-#[allow(dead_code)]
-impl LanguageAssets {
-    /// Get the icon path for a language
-    /// Returns the appropriate icon based on language and theme
-    pub fn language_icon(language: &str, is_dark: bool) -> Option<&'static str> {
-        let lang = language.to_lowercase();
-        match lang.as_str() {
-            // Shell/Terminal
-            "bash" | "sh" | "shell" | "zsh" => Some(if is_dark {
-                "icons/language/bash_dark.svg"
-            } else {
-                "icons/language/bash.svg"
-            }),
-            "powershell" | "ps1" => Some("icons/language/powershell.svg"),
-
-            // C family
-            "c" => Some("icons/language/c.svg"),
-            "cpp" | "c++" | "cxx" | "cc" => Some("icons/language/c-plusplus.svg"),
-            "csharp" | "c#" | "cs" => Some("icons/language/csharp.svg"),
-
-            // Web
-            "javascript" | "js" | "jsx" => Some("icons/language/javascript.svg"),
-            "typescript" | "ts" | "tsx" => Some("icons/language/typescript.svg"),
-            "html" | "htm" => Some("icons/language/html5.svg"),
-            "css" => Some("icons/language/css.svg"),
-            "sass" | "scss" => Some("icons/language/sass.svg"),
-            "graphql" | "gql" => Some("icons/language/graphql.svg"),
-
-            // Systems
-            "rust" | "rs" => Some(if is_dark {
-                "icons/language/rust_dark.svg"
-            } else {
-                "icons/language/rust.svg"
-            }),
-            "go" | "golang" => Some(if is_dark {
-                "icons/language/golang_dark.svg"
-            } else {
-                "icons/language/golang.svg"
-            }),
-            "zig" => Some("icons/language/zig.svg"),
-
-            // JVM
-            "java" => Some("icons/language/java.svg"),
-            "kotlin" | "kt" | "kts" => Some("icons/language/kotlin.svg"),
-            "scala" => Some("icons/language/scala.svg"),
-
-            // Scripting
-            "python" | "py" => Some("icons/language/python.svg"),
-            "ruby" | "rb" => Some("icons/language/ruby.svg"),
-            "lua" => Some("icons/language/lua.svg"),
-            "r" => Some(if is_dark {
-                "icons/language/r_dark.svg"
-            } else {
-                "icons/language/r.svg"
-            }),
-
-            // Mobile
-            "swift" => Some("icons/language/swift.svg"),
-            "dart" => Some("icons/language/dart.svg"),
-
-            // Functional
-            "haskell" | "hs" => Some("icons/language/haskell.svg"),
-            "gleam" => Some("icons/language/gleam.svg"),
-
-            // Data/Config
-            "json" | "jsonc" => Some("icons/language/json.svg"),
-            "markdown" | "md" => Some(if is_dark {
-                "icons/language/markdown-dark.svg"
-            } else {
-                "icons/language/markdown-light.svg"
-            }),
-
-            // Scientific
-            "julia" | "jl" => Some("icons/language/julia.svg"),
-            "matlab" | "m" => Some("icons/language/matlab.svg"),
-            "fortran" | "f90" | "f95" => Some("icons/language/fortran.svg"),
-
-            // Other
-            "cobol" | "cob" => Some("icons/language/cobol.svg"),
-            "solidity" | "sol" => Some("icons/language/solidity.svg"),
-            "terraform" | "tf" | "hcl" => Some("icons/language/terraform.svg"),
-
-            _ => None,
-        }
+impl IconNamed for LlmProvider {
+    fn path(self) -> SharedString {
+        let name: Cow<str> = match self {
+            Self::OpenAI | Self::AzureOpenAI => "openai".into(),
+            Self::GoogleAI => "google".into(),
+            Self::Mistral => "mistral-ai".into(),
+            Self::TogetherAI => "together".into(),
+            Self::FireworksAI => "fireworks".into(),
+            _ => self.to_string().to_lowercase().into(),
+        };
+        format!("icons/llm_provider/{}.svg", name).into()
     }
+}
 
-    /// Check if a language has an icon
-    pub fn has_icon(language: &str) -> bool {
-        Self::language_icon(language, false).is_some()
+impl IntoElement for LlmProvider {
+    type Element = AnyElement;
+
+    fn into_element(self) -> Self::Element {
+        self.icon().into_any_element()
+    }
+}
+
+/// Programming language enum for code blocks
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, EnumString, Display)]
+#[strum(serialize_all = "lowercase", ascii_case_insensitive)]
+#[allow(dead_code)]
+pub enum Language {
+    // Shell/Terminal
+    #[strum(
+        serialize = "bash",
+        serialize = "sh",
+        serialize = "shell",
+        serialize = "zsh"
+    )]
+    Bash,
+    #[strum(serialize = "powershell", serialize = "ps1")]
+    PowerShell,
+
+    // C family
+    C,
+    #[strum(
+        serialize = "cpp",
+        serialize = "c++",
+        serialize = "cxx",
+        serialize = "cc"
+    )]
+    Cpp,
+    #[strum(serialize = "csharp", serialize = "c#", serialize = "cs")]
+    CSharp,
+
+    // Web
+    #[strum(serialize = "javascript", serialize = "js", serialize = "jsx")]
+    JavaScript,
+    #[strum(serialize = "typescript", serialize = "ts", serialize = "tsx")]
+    TypeScript,
+    #[strum(serialize = "html", serialize = "htm")]
+    Html,
+    Css,
+    #[strum(serialize = "sass", serialize = "scss")]
+    Sass,
+    #[strum(serialize = "graphql", serialize = "gql")]
+    GraphQL,
+
+    // Systems
+    #[strum(serialize = "rust", serialize = "rs")]
+    Rust,
+    #[strum(serialize = "go", serialize = "golang")]
+    Go,
+    Zig,
+
+    // JVM
+    Java,
+    #[strum(serialize = "kotlin", serialize = "kt", serialize = "kts")]
+    Kotlin,
+    Scala,
+
+    // Scripting
+    #[strum(serialize = "python", serialize = "py")]
+    Python,
+    #[strum(serialize = "ruby", serialize = "rb")]
+    Ruby,
+    Lua,
+    R,
+
+    // Mobile
+    Swift,
+    Dart,
+
+    // Functional
+    #[strum(serialize = "haskell", serialize = "hs")]
+    Haskell,
+    Gleam,
+
+    // Data/Config
+    #[strum(serialize = "json", serialize = "jsonc")]
+    Json,
+    #[strum(serialize = "yaml", serialize = "yml")]
+    Yaml,
+    Toml,
+    #[strum(serialize = "markdown", serialize = "md")]
+    Markdown,
+
+    // Scientific
+    #[strum(serialize = "julia", serialize = "jl")]
+    Julia,
+    #[strum(serialize = "matlab", serialize = "m")]
+    Matlab,
+    #[strum(serialize = "fortran", serialize = "f90", serialize = "f95")]
+    Fortran,
+
+    // Other
+    #[strum(serialize = "cobol", serialize = "cob")]
+    Cobol,
+    #[strum(serialize = "solidity", serialize = "sol")]
+    Solidity,
+    #[strum(serialize = "terraform", serialize = "tf", serialize = "hcl")]
+    Terraform,
+    Sql,
+}
+
+impl IconNamed for Language {
+    fn path(self) -> SharedString {
+        let name: Cow<str> = match self {
+            Self::Cpp => "c-plusplus".into(),
+            _ => self.to_string().to_lowercase().into(),
+        };
+        format!("icons/language/{}.svg", name).into()
+    }
+}
+
+impl IntoElement for Language {
+    type Element = AnyElement;
+
+    fn into_element(self) -> Self::Element {
+        self.icon().into_any_element()
     }
 }

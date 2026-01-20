@@ -78,6 +78,9 @@ chrono = "0.4"
 # i18n
 rust-i18n = "3"
 
+# Enum utilities
+strum = { version = "0.26", features = ["derive"] }
+
 # Database
 postgresql_embedded = { version = "0.20", features = ["bundled"], optional = true }
 sea-orm = { version = "1.1", features = ["runtime-tokio-rustls", "macros"] }

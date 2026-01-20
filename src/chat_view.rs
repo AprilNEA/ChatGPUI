@@ -133,7 +133,7 @@ impl ChatView {
         self.clear_streaming_ui_buffer();
         self.update_message_list(cx);
         self.message_list
-            .update(cx, |list, _cx| list.force_scroll_to_bottom());
+            .update(cx, |list, _cx| list.reset_scroll_tracking());
     }
 
     /// Load an existing conversation
@@ -219,7 +219,7 @@ impl ChatView {
                         }
                         this.update_message_list(cx);
                         this.message_list
-                            .update(cx, |list, _cx| list.force_scroll_to_bottom());
+                            .update(cx, |list, _cx| list.reset_scroll_tracking());
                     });
                 });
             }

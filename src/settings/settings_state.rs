@@ -2,7 +2,8 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 
-use gpui::{App, Global};
+use gpui::{App, Global, SharedString, Window};
+use gpui_component::{Theme, ThemeMode};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -25,6 +26,90 @@ pub enum IconPlacement {
     Both,
 }
 
+/// Appearance mode
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+pub enum AppearanceMode {
+    #[default]
+    System,
+    Light,
+    Dark,
+}
+
+/// Accent color mode
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+pub enum AccentColor {
+    #[default]
+    System,
+    Blue,
+    Purple,
+    Pink,
+    Red,
+    Orange,
+    Yellow,
+    Green,
+}
+
+/// Appearance settings
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct AppearanceSettings {
+    #[serde(default)]
+    pub mode: AppearanceMode,
+    #[serde(default)]
+    pub accent_color: AccentColor,
+    /// UI font family name (None means system default)
+    #[serde(default)]
+    pub ui_font: Option<String>,
+    /// Code font family name (None means system default)
+    #[serde(default)]
+    pub code_font: Option<String>,
+}
+
+impl AppearanceSettings {
+    /// Apply appearance mode to the theme system
+    pub fn apply_mode(&self, window: Option<&mut Window>, cx: &mut App) {
+        match self.mode {
+            AppearanceMode::System => {
+                Theme::sync_system_appearance(window, cx);
+            }
+            AppearanceMode::Light => {
+                Theme::change(ThemeMode::Light, window, cx);
+            }
+            AppearanceMode::Dark => {
+                Theme::change(ThemeMode::Dark, window, cx);
+            }
+        }
+    }
+
+    /// Apply UI font to the theme system
+    pub fn apply_ui_font(&self, cx: &mut App) {
+        let theme = Theme::global_mut(cx);
+        if let Some(font) = &self.ui_font {
+            theme.font_family = SharedString::from(font.clone());
+        } else {
+            // Use system default font
+            theme.font_family = SharedString::from(".SystemUIFont");
+        }
+    }
+
+    /// Apply code font to the theme system
+    pub fn apply_code_font(&self, cx: &mut App) {
+        let theme = Theme::global_mut(cx);
+        if let Some(font) = &self.code_font {
+            theme.mono_font_family = SharedString::from(font.clone());
+        } else {
+            // Use system default monospace font
+            theme.mono_font_family = SharedString::from("monospace");
+        }
+    }
+
+    /// Apply all appearance settings
+    pub fn apply_all(&self, window: Option<&mut Window>, cx: &mut App) {
+        self.apply_mode(window, cx);
+        self.apply_ui_font(cx);
+        self.apply_code_font(cx);
+    }
+}
+
 /// Global application settings
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppSettings {
@@ -43,6 +128,10 @@ pub struct AppSettings {
     pub auto_scroll: bool,
     #[serde(default)]
     pub proxy: Option<String>,
+
+    // Appearance settings
+    #[serde(default)]
+    pub appearance: AppearanceSettings,
 }
 
 fn default_language() -> String {
@@ -73,6 +162,7 @@ impl Default for AppSettings {
             icon_placement: IconPlacement::default(),
             auto_scroll: default_auto_scroll(),
             proxy: None,
+            appearance: AppearanceSettings::default(),
         }
     }
 }
@@ -151,4 +241,10 @@ where
     if let Err(e) = settings.0.save() {
         tracing::error!("Failed to save settings: {}", e);
     }
+}
+
+/// Apply appearance settings from the current configuration
+pub fn apply_appearance_settings(window: Option<&mut Window>, cx: &mut App) {
+    let appearance = get_settings(cx).appearance.clone();
+    appearance.apply_all(window, cx);
 }

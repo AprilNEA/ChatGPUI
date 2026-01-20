@@ -47,6 +47,7 @@ const CODE_LINE_HEIGHT: Pixels = px(16.);
 const WIDTH_CHANGE_EPSILON: f32 = 20.0;
 const SCROLL_CHANGE_EPSILON: f32 = 1.0;
 const REMEASURE_INTERVAL_MS: u64 = 250;
+const TAIL_PREMEASURE_COUNT: usize = 24;
 
 fn max_pixels(a: Pixels, b: Pixels) -> Pixels {
     if f32::from(a) >= f32::from(b) { a } else { b }
@@ -111,8 +112,8 @@ pub struct MessageList {
     pending_scroll_to_bottom: bool,
     /// Whether the view should keep following the bottom.
     stick_to_bottom: bool,
-    /// Force a one-time jump to bottom, ignoring auto-scroll setting.
-    force_scroll_to_bottom: bool,
+    /// Whether to pre-measure the tail items on the next render.
+    pending_tail_measure: bool,
     size_cache: HashMap<Uuid, MeasureEntry>,
     content_width: Option<Pixels>,
     last_scroll_offset: Pixels,
@@ -130,7 +131,7 @@ impl MessageList {
             scroll_handle: VirtualListScrollHandle::new(),
             pending_scroll_to_bottom: false,
             stick_to_bottom: true,
-            force_scroll_to_bottom: false,
+            pending_tail_measure: false,
             size_cache: HashMap::new(),
             content_width: None,
             last_scroll_offset: Pixels::ZERO,
@@ -259,13 +260,12 @@ impl MessageList {
         cx.notify();
     }
 
-    /// Force the list to scroll to the bottom on the next render.
-    pub fn force_scroll_to_bottom(&mut self) {
-        self.force_scroll_to_bottom = true;
-        self.pending_scroll_to_bottom = true;
-        self.stick_to_bottom = true;
+    pub fn reset_scroll_tracking(&mut self) {
         self.last_scroll_offset = Pixels::ZERO;
         self.last_max_offset = Pixels::ZERO;
+        self.stick_to_bottom = true;
+        self.pending_scroll_to_bottom = true;
+        self.pending_tail_measure = true;
     }
 
     fn is_near_bottom(&self) -> bool {
@@ -524,16 +524,31 @@ impl MessageList {
             cx.notify();
         }
     }
+
+    fn measure_tail_items(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let total = self.virtual_items.len();
+        if total == 0 {
+            return;
+        }
+        let tail_len = TAIL_PREMEASURE_COUNT.min(total);
+        let start = total - tail_len;
+        self.measure_visible_items(start..total, window, cx);
+    }
 }
 
 impl Render for MessageList {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.update_content_width(cx);
         let auto_scroll = get_settings(cx).auto_scroll;
         self.update_scroll_follow(auto_scroll);
 
-        let should_scroll_to_bottom = self.force_scroll_to_bottom
-            || (auto_scroll && (self.stick_to_bottom || self.pending_scroll_to_bottom));
+        if self.pending_tail_measure {
+            self.measure_tail_items(window, cx);
+            self.pending_tail_measure = false;
+        }
+
+        let should_scroll_to_bottom =
+            auto_scroll && (self.stick_to_bottom || self.pending_scroll_to_bottom);
         if should_scroll_to_bottom {
             let max_offset = self.scroll_handle.max_offset().height;
             let current_x = self.scroll_handle.offset().x;
@@ -545,9 +560,6 @@ impl Render for MessageList {
             self.scroll_handle.set_offset(point(current_x, target_y));
         }
         self.pending_scroll_to_bottom = false;
-        if self.force_scroll_to_bottom && self.scroll_handle.bounds().size.height > Pixels::ZERO {
-            self.force_scroll_to_bottom = false;
-        }
 
         let view = cx.entity();
         v_virtual_list(
