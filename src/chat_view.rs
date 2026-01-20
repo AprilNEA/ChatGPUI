@@ -131,9 +131,10 @@ impl ChatView {
             .push(Arc::new(Message::system("You are a helpful assistant.")));
         self.current_conversation_id = None;
         self.clear_streaming_ui_buffer();
-        self.update_message_list(cx);
+        // Reset scroll tracking BEFORE updating message list
         self.message_list
             .update(cx, |list, _cx| list.reset_scroll_tracking());
+        self.update_message_list(cx);
     }
 
     /// Load an existing conversation
@@ -217,9 +218,11 @@ impl ChatView {
                                 thinking_duration_ms: None,
                             }));
                         }
-                        this.update_message_list(cx);
+                        // Reset scroll tracking BEFORE updating message list
+                        // so that set_messages sees stick_to_bottom = true
                         this.message_list
                             .update(cx, |list, _cx| list.reset_scroll_tracking());
+                        this.update_message_list(cx);
                     });
                 });
             }
