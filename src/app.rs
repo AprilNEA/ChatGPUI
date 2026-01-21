@@ -7,12 +7,14 @@ use std::time::Duration;
 use gpui::prelude::FluentBuilder;
 use gpui::*;
 use gpui_component::{
-    ActiveTheme, IconName,
+    ActiveTheme,
     button::{Button, ButtonVariants},
     h_flex,
     notification::{Notification, NotificationList, NotificationType},
     v_flex,
 };
+
+use crate::assets::{AppIcon, ButtonAppIconExt};
 use gpui_tokio_bridge::Tokio;
 
 use crate::chat_sidebar::{ChatSidebar, ConversationDeletedEvent, ConversationSelectedEvent};
@@ -227,7 +229,7 @@ impl Render for ChatApp {
                     .gap_0()
                     .child(
                         Button::new("toggle-sidebar")
-                            .icon(IconName::PanelLeft)
+                            .app_icon(AppIcon::PanelLeft)
                             .ghost()
                             .on_click(cx.listener(|this, _, _window, cx| {
                                 this.toggle_sidebar(cx);
@@ -235,7 +237,7 @@ impl Render for ChatApp {
                     )
                     .child(
                         Button::new("new-chat")
-                            .icon(IconName::Plus)
+                            .app_icon(AppIcon::Plus)
                             .ghost()
                             .on_click(cx.listener(|this, _, _window, cx| {
                                 this.new_chat(cx);

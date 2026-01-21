@@ -14,6 +14,7 @@ mod app;
 mod assets;
 mod chat_sidebar;
 mod chat_view;
+mod components;
 mod conversation_cache;
 mod database;
 mod llm;

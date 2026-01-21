@@ -5,14 +5,16 @@
 use gpui::prelude::FluentBuilder;
 use gpui::*;
 use gpui_component::{
-    ActiveTheme, Disableable, IconName, IconNamed, Selectable, Sizable,
+    ActiveTheme, Disableable, Icon, IconNamed, Selectable, Sizable,
     button::{Button, ButtonVariants},
     h_flex,
     input::{Input, InputEvent, InputState},
-    menu::{DropdownMenu, PopupMenuItem},
+    menu::PopupMenuItem,
     v_flex,
 };
 
+use crate::assets::{AppIcon, ButtonAppIconExt};
+use crate::components::split_button_labeled;
 use crate::message::Attachment;
 
 const MAX_IMAGE_SIZE: usize = 20 * 1024 * 1024; // 20MB
@@ -38,12 +40,12 @@ impl ReasoningLevel {
     }
 
     #[allow(dead_code)]
-    pub fn icon(&self) -> IconName {
+    pub fn icon(&self) -> AppIcon {
         match self {
-            ReasoningLevel::Off => IconName::CircleX,
-            ReasoningLevel::Low => IconName::Loader,
-            ReasoningLevel::Medium => IconName::Loader,
-            ReasoningLevel::High => IconName::Loader,
+            ReasoningLevel::Off => AppIcon::CircleX,
+            ReasoningLevel::Low => AppIcon::Loader,
+            ReasoningLevel::Medium => AppIcon::Loader,
+            ReasoningLevel::High => AppIcon::Loader,
         }
     }
 }
@@ -286,7 +288,7 @@ impl MessageInput {
                     // 附件按钮
                     .child(
                         Button::new("attachment")
-                            .icon(IconName::Plus)
+                            .app_icon(AppIcon::Plus)
                             .ghost()
                             .disabled(is_loading)
                             .on_click(cx.listener(|this, _, _window, cx| {
@@ -296,7 +298,7 @@ impl MessageInput {
                     // 搜索开关
                     .child(self.render_toggle_button(
                         "web-search",
-                        IconName::Globe,
+                        AppIcon::Globe,
                         self.web_search_enabled,
                         is_loading,
                         cx.listener(|this, _, _window, cx| {
@@ -306,7 +308,7 @@ impl MessageInput {
                     // Artifacts 开关
                     .child(self.render_toggle_button(
                         "artifacts",
-                        IconName::Frame,
+                        AppIcon::Frame,
                         self.artifacts_enabled,
                         is_loading,
                         cx.listener(|this, _, _window, cx| {
@@ -318,7 +320,7 @@ impl MessageInput {
                     // 图像生成开关
                     .child(self.render_toggle_button(
                         "image-gen",
-                        IconName::Palette,
+                        AppIcon::Palette,
                         self.image_gen_enabled,
                         is_loading,
                         cx.listener(|this, _, _window, cx| {
@@ -328,7 +330,7 @@ impl MessageInput {
                     // MCP 工具开关（占位符）
                     .child(self.render_toggle_button(
                         "mcp",
-                        IconName::SquareTerminal,
+                        AppIcon::SquareTerminal,
                         self.mcp_enabled,
                         is_loading,
                         cx.listener(|this, _, _window, cx| {
@@ -339,7 +341,7 @@ impl MessageInput {
             // 发送按钮
             .child(
                 Button::new("send")
-                    .icon(IconName::ArrowRight)
+                    .app_icon(AppIcon::ArrowRight)
                     .small()
                     .primary()
                     .loading(is_loading)
@@ -353,13 +355,13 @@ impl MessageInput {
     fn render_toggle_button(
         &self,
         id: &'static str,
-        icon: IconName,
+        icon: AppIcon,
         enabled: bool,
         is_loading: bool,
         handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
     ) -> impl IntoElement {
         Button::new(id)
-            .icon(icon)
+            .app_icon(icon)
             .ghost()
             .selected(enabled)
             .disabled(is_loading)
@@ -369,14 +371,25 @@ impl MessageInput {
     fn render_reasoning_dropdown(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
         let current_level = self.reasoning_level;
         let is_enabled = current_level != ReasoningLevel::Off;
+        let is_loading = self.is_loading;
         let entity = cx.entity().clone();
 
-        Button::new("reasoning")
-            .icon(IconName::Bot)
-            .ghost()
-            .selected(is_enabled)
-            .child(current_level.label())
-            .dropdown_menu(move |menu, _window, _cx| {
+        split_button_labeled(
+            "reasoning",
+            AppIcon::Brain,
+            current_level.label(),
+            is_enabled,
+            is_loading,
+            cx.listener(|this, _, _window, cx| {
+                // 点击主按钮：在关闭和中等之间切换
+                let next_level = if this.reasoning_level == ReasoningLevel::Off {
+                    ReasoningLevel::Medium
+                } else {
+                    ReasoningLevel::Off
+                };
+                this.set_reasoning_level(next_level, cx);
+            }),
+            move |menu, _window, _cx| {
                 let entity_off = entity.clone();
                 let entity_low = entity.clone();
                 let entity_med = entity.clone();
@@ -384,7 +397,7 @@ impl MessageInput {
 
                 menu.item(
                     PopupMenuItem::new("关闭")
-                        .icon(IconName::CircleX)
+                        .icon(Icon::new(AppIcon::CircleX))
                         .checked(current_level == ReasoningLevel::Off)
                         .on_click(move |_, _window, cx| {
                             entity_off.update(cx, |this, cx| {
@@ -394,7 +407,7 @@ impl MessageInput {
                 )
                 .item(
                     PopupMenuItem::new("低")
-                        .icon(IconName::Loader)
+                        .icon(Icon::new(AppIcon::Loader))
                         .checked(current_level == ReasoningLevel::Low)
                         .on_click(move |_, _window, cx| {
                             entity_low.update(cx, |this, cx| {
@@ -404,7 +417,7 @@ impl MessageInput {
                 )
                 .item(
                     PopupMenuItem::new("中")
-                        .icon(IconName::Loader)
+                        .icon(Icon::new(AppIcon::Loader))
                         .checked(current_level == ReasoningLevel::Medium)
                         .on_click(move |_, _window, cx| {
                             entity_med.update(cx, |this, cx| {
@@ -414,7 +427,7 @@ impl MessageInput {
                 )
                 .item(
                     PopupMenuItem::new("高")
-                        .icon(IconName::Loader)
+                        .icon(Icon::new(AppIcon::Loader))
                         .checked(current_level == ReasoningLevel::High)
                         .on_click(move |_, _window, cx| {
                             entity_high.update(cx, |this, cx| {
@@ -422,7 +435,8 @@ impl MessageInput {
                             });
                         }),
                 )
-            })
+            },
+        )
     }
 
     fn render_attachment_preview(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -449,7 +463,7 @@ impl MessageInput {
                             .items_center()
                             .child(
                                 svg()
-                                    .path(IconName::File.path())
+                                    .path(AppIcon::File.path())
                                     .size_4()
                                     .text_color(theme.muted_foreground),
                             )
@@ -464,7 +478,7 @@ impl MessageInput {
                             )
                             .child(
                                 Button::new(SharedString::from(format!("remove-{}", id)))
-                                    .icon(IconName::Close)
+                                    .app_icon(AppIcon::Close)
                                     .ghost()
                                     .on_click(cx.listener(move |this, _, _window, cx| {
                                         this.remove_attachment(id, cx);

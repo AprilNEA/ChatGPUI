@@ -816,7 +816,7 @@ dependencies = [
  "bitflags 2.10.0",
  "cexpr",
  "clang-sys",
- "itertools 0.11.0",
+ "itertools 0.13.0",
  "log",
  "prettyplease",
  "proc-macro2",
@@ -1246,7 +1246,6 @@ dependencies = [
  "gpui",
  "gpui-component",
  "gpui-markdown",
- "gpui-symbols",
  "gpui-tokio-bridge",
  "libc",
  "migration",
@@ -3009,19 +3008,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "gpui-symbols"
-version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "69c2b7a17acac114c68637f8e58327bc5780eaf664d96012a6a33ce711a94e8a"
-dependencies = [
- "gpui",
- "image",
- "objc",
- "sfsymbols",
- "smallvec",
-]
-
-[[package]]
 name = "gpui-tokio-bridge"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3482,7 +3468,7 @@ dependencies = [
  "libc",
  "percent-encoding",
  "pin-project-lite",
- "socket2 0.5.10",
+ "socket2 0.6.1",
  "system-configuration",
  "tokio",
  "tower-service",
@@ -5689,7 +5675,7 @@ dependencies = [
  "quinn-udp",
  "rustc-hash 2.1.1",
  "rustls",
- "socket2 0.5.10",
+ "socket2 0.6.1",
  "thiserror 2.0.17",
  "tokio",
  "tracing",
@@ -5726,7 +5712,7 @@ dependencies = [
  "cfg_aliases",
  "libc",
  "once_cell",
- "socket2 0.5.10",
+ "socket2 0.6.1",
  "tracing",
  "windows-sys 0.60.2",
 ]
@@ -7062,12 +7048,6 @@ dependencies = [
  "serde",
  "unsafe-libyaml",
 ]
-
-[[package]]
-name = "sfsymbols"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f2888368f031c6bb0aee0e02f7adb300fcc9b867f2edc88c757f92952546ddb4"
 
 [[package]]
 name = "sha1"

@@ -96,10 +96,9 @@ dirs = "5"
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
-# macOS dock icon and SF Symbols
+# macOS dock icon
 [target.'cfg(target_os = "macos")'.dependencies]
 cocoa = "0.26"
-gpui-symbols = "0.6.0"
 
 [package.metadata.bundle]
 name = "ChatGPUI"
