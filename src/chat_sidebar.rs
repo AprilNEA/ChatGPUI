@@ -7,7 +7,7 @@ use std::rc::Rc;
 
 use gpui::*;
 use gpui_component::{
-    ActiveTheme, Icon, IconName, Theme, ThemeMode, VirtualListScrollHandle,
+    ActiveTheme, Icon, Theme, ThemeMode, VirtualListScrollHandle,
     button::{Button, ButtonVariants},
     h_flex,
     input::{Input, InputState},
@@ -392,7 +392,7 @@ impl ChatSidebar {
 
             menu.item(
                 PopupMenuItem::new(t!("context.rename"))
-                    .icon(IconName::Settings2)
+                    .icon(Icon::new(AppIcon::Settings2))
                     .on_click(move |_, window, cx| {
                         entity_for_rename.update(cx, |this, cx| {
                             this.start_rename(conversation_id, window, cx);
@@ -401,14 +401,14 @@ impl ChatSidebar {
             )
             .item(
                 PopupMenuItem::new(t!("context.favorite"))
-                    .icon(IconName::Star)
+                    .icon(Icon::new(AppIcon::Star))
                     .on_click(move |_, _, _cx| {
                         tracing::info!("Toggle favorite: {}", conversation_id);
                     }),
             )
             .item(
                 PopupMenuItem::new(t!("context.generate_title"))
-                    .icon(IconName::Bot)
+                    .icon(Icon::new(AppIcon::Bot))
                     .on_click(move |_, _, _cx| {
                         tracing::info!("Generate title: {}", conversation_id);
                     }),
@@ -421,14 +421,14 @@ impl ChatSidebar {
             .separator()
             .item(
                 PopupMenuItem::new(t!("context.clone"))
-                    .icon(IconName::Copy)
+                    .icon(Icon::new(AppIcon::Copy))
                     .on_click(move |_, _, _cx| {
                         tracing::info!("Clone conversation: {}", conversation_id);
                     }),
             )
             .item(
                 PopupMenuItem::new(t!("context.hide_icon"))
-                    .icon(IconName::EyeOff)
+                    .icon(Icon::new(AppIcon::EyeOff))
                     .on_click(move |_, _, _cx| {
                         tracing::info!("Toggle icon: {}", conversation_id);
                     }),
@@ -436,14 +436,14 @@ impl ChatSidebar {
             .separator()
             .item(
                 PopupMenuItem::new(t!("context.copy_text"))
-                    .icon(IconName::File)
+                    .icon(Icon::new(AppIcon::File))
                     .on_click(move |_, _, _cx| {
                         tracing::info!("Copy text: {}", conversation_id);
                     }),
             )
             .item(
                 PopupMenuItem::new(t!("context.copy_id"))
-                    .icon(IconName::Copy)
+                    .icon(Icon::new(AppIcon::Copy))
                     .on_click({
                         let id_str = id_for_copy_id.clone();
                         move |_, _, cx| {
@@ -453,7 +453,7 @@ impl ChatSidebar {
             )
             .item(
                 PopupMenuItem::new(t!("context.copy_link"))
-                    .icon(IconName::ExternalLink)
+                    .icon(Icon::new(AppIcon::ExternalLink))
                     .on_click({
                         let link = id_for_copy_link.clone();
                         move |_, _, cx| {
@@ -465,21 +465,21 @@ impl ChatSidebar {
             .submenu(t!("context.export"), window, cx, move |menu, _, _| {
                 menu.item(
                     PopupMenuItem::new(t!("context.export_json"))
-                        .icon(IconName::File)
+                        .icon(Icon::new(AppIcon::File))
                         .on_click(move |_, _, _cx| {
                             tracing::info!("Export JSON: {}", conversation_id);
                         }),
                 )
                 .item(
                     PopupMenuItem::new(t!("context.export_markdown"))
-                        .icon(IconName::File)
+                        .icon(Icon::new(AppIcon::File))
                         .on_click(move |_, _, _cx| {
                             tracing::info!("Export Markdown: {}", conversation_id);
                         }),
                 )
                 .item(
                     PopupMenuItem::new(t!("context.export_txt"))
-                        .icon(IconName::File)
+                        .icon(Icon::new(AppIcon::File))
                         .on_click(move |_, _, _cx| {
                             tracing::info!("Export Text: {}", conversation_id);
                         }),
@@ -488,7 +488,7 @@ impl ChatSidebar {
             .separator()
             .item(
                 PopupMenuItem::new(t!("context.delete"))
-                    .icon(IconName::Delete)
+                    .icon(Icon::new(AppIcon::Delete))
                     .on_click(move |_, _, cx| {
                         entity_for_delete.update(cx, |this, cx| {
                             this.delete_conversation(conversation_id, cx);
@@ -497,7 +497,7 @@ impl ChatSidebar {
             )
             .item(
                 PopupMenuItem::new(t!("context.delete_all"))
-                    .icon(IconName::Delete)
+                    .icon(Icon::new(AppIcon::Delete))
                     .on_click(move |_, _, cx| {
                         entity_for_delete_all.update(cx, |this, cx| {
                             this.delete_all_conversations(cx);
@@ -532,7 +532,7 @@ impl ChatSidebar {
     fn render_search(&mut self, _cx: &mut Context<Self>) -> impl IntoElement {
         h_flex().w_full().px_3().pb_2().child(
             Input::new(&self.search_input)
-                .prefix(Icon::new(IconName::Search).size_6())
+                .prefix(Icon::new(AppIcon::Search).size_6())
                 .appearance(false),
         )
     }
@@ -639,6 +639,7 @@ impl ChatSidebar {
                                                     ))
                                                     .child(
                                                         h_flex()
+                                                            .w_full()
                                                             .gap_2()
                                                             .items_center()
                                                             .overflow_hidden()
@@ -674,6 +675,7 @@ impl ChatSidebar {
                                                                     // Wrap input in div for key handling
                                                                     div()
                                                                         .flex_1()
+                                                                        .min_w_0()
                                                                         .on_key_down(cx.listener(
                                                                             |this, event: &KeyDownEvent, _, cx| {
                                                                                 if event.keystroke.key == "enter" {
@@ -690,15 +692,19 @@ impl ChatSidebar {
                                                                         )
                                                                         .into_any_element()
                                                                 } else {
-                                                                    Label::new(title.clone())
-                                                                        .text_sm()
+                                                                    div()
+                                                                        .flex_1()
+                                                                        .min_w_0()
                                                                         .truncate()
+                                                                        .child(Label::new(title.clone()).text_sm())
                                                                         .into_any_element()
                                                                 }
                                                             } else {
-                                                                Label::new(title.clone())
-                                                                    .text_sm()
+                                                                div()
+                                                                    .flex_1()
+                                                                    .min_w_0()
                                                                     .truncate()
+                                                                    .child(Label::new(title.clone()).text_sm())
                                                                     .into_any_element()
                                                             }),
                                                     ),
@@ -755,9 +761,9 @@ impl ChatSidebar {
                     .child(
                         Button::new("theme-toggle")
                             .icon(if is_dark {
-                                IconName::Sun
+                                Icon::new(AppIcon::Sun)
                             } else {
-                                IconName::Moon
+                                Icon::new(AppIcon::Moon)
                             })
                             .ghost()
                             .on_click(|_, window, cx| {
