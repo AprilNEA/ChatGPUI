@@ -12,7 +12,7 @@ description = "Markdown rendering component for GPUI"
 
 [features]
 default = ["syntax-highlighting"]
-syntax-highlighting = ["dep:syntect"]
+syntax-highlighting = ["dep:syntect", "dep:vscode-theme-syntect"]
 
 [dependencies]
 gpui = "0.2.2"
@@ -23,6 +23,7 @@ pulldown-cmark = { version = "0.13", default-features = false, features = ["simd
 
 # Syntax highlighting (optional)
 syntect = { version = "5.2", default-features = false, features = ["default-fancy"], optional = true }
+vscode-theme-syntect = { version = "0.1", optional = true }
 
 # Utilities
 smallvec = "1.13"

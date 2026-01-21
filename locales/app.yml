@@ -331,6 +331,14 @@ thinking.duration:
   zh-CN: "思考"
 
 # Appearance Settings
+settings.theme:
+  en: "Theme"
+  zh-CN: "主题"
+
+settings.theme_default:
+  en: "Default"
+  zh-CN: "默认"
+
 settings.appearance_mode:
   en: "Appearance"
   zh-CN: "外观"
@@ -354,6 +362,18 @@ settings.code_font:
 settings.code_font_desc:
   en: "Code blocks and editor font"
   zh-CN: "代码块和编辑器字体"
+
+settings.code_theme:
+  en: "Code Theme"
+  zh-CN: "代码主题"
+
+settings.code_theme_desc:
+  en: "Syntax highlighting theme for code blocks"
+  zh-CN: "代码块语法高亮主题"
+
+settings.code_theme_auto:
+  en: "Auto (Match Appearance)"
+  zh-CN: "自动（跟随外观）"
 
 settings.system_default:
   en: "System Default"

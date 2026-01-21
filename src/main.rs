@@ -112,6 +112,25 @@ fn main() {
         settings::init(cx);
         database::init(cx);
 
+        // Initialize code syntax highlighting theme registry
+        gpui_markdown::CodeThemeRegistry::init(cx);
+
+        // Load custom code themes from code_themes directory
+        let code_themes_dir = PathBuf::from("./code_themes");
+        if code_themes_dir.exists() {
+            let registry = gpui_markdown::CodeThemeRegistry::global(cx);
+            match registry.load_from_directory(&code_themes_dir) {
+                Ok(count) => {
+                    if count > 0 {
+                        tracing::info!("Loaded {} custom code themes", count);
+                    }
+                }
+                Err(err) => {
+                    tracing::error!("Failed to load code themes: {}", err);
+                }
+            }
+        }
+
         // Load themes from themes directory
         if let Err(err) = ThemeRegistry::watch_dir(PathBuf::from("./themes"), cx, move |cx| {
             // Apply saved appearance settings (including theme) after themes are loaded

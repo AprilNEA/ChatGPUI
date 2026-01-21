@@ -4,6 +4,7 @@
 
 //! Syntax highlighting for code blocks using syntect
 
+use crate::theme_registry::CodeThemeRegistry;
 use gpui::*;
 use gpui_component::v_flex;
 use std::collections::hash_map::DefaultHasher;
@@ -11,7 +12,7 @@ use std::future::Future;
 use std::hash::{Hash, Hasher};
 use std::sync::{Arc, LazyLock};
 use syntect::easy::HighlightLines;
-use syntect::highlighting::{Style, ThemeSet};
+use syntect::highlighting::{Style, Theme};
 use syntect::parsing::SyntaxSet;
 use syntect::util::LinesWithEndings;
 
@@ -19,16 +20,18 @@ use syntect::util::LinesWithEndings;
 static SYNTAX_SET: LazyLock<Arc<SyntaxSet>> =
     LazyLock::new(|| Arc::new(SyntaxSet::load_defaults_newlines()));
 
-/// Global ThemeSet cache (loaded once).
-static THEME_SET: LazyLock<Arc<ThemeSet>> = LazyLock::new(|| Arc::new(ThemeSet::load_defaults()));
-
 type HighlightedLines = Vec<Vec<(Hsla, String, bool, bool)>>;
 
 #[derive(Clone, Hash, PartialEq, Eq)]
 struct HighlightSource {
     code: SharedString,
     language: SharedString,
-    theme: SharedString,
+    theme_name: SharedString,
+}
+
+// Store theme in thread-local for async access
+thread_local! {
+    static CURRENT_THEME: std::cell::RefCell<Option<Arc<Theme>>> = const { std::cell::RefCell::new(None) };
 }
 
 struct HighlightAsset;
@@ -42,8 +45,23 @@ impl Asset for HighlightAsset {
         source: Self::Source,
         _cx: &mut App,
     ) -> impl Future<Output = Self::Output> + Send + 'static {
-        async move { Arc::new(highlight_code(&source)) }
+        // Get theme from thread-local (set before calling use_asset)
+        let theme = CURRENT_THEME.with(|t| t.borrow().clone());
+        async move {
+            if let Some(theme) = theme {
+                Arc::new(highlight_code(&source, &theme))
+            } else {
+                // Fallback: return empty highlighting
+                Arc::new(Vec::new())
+            }
+        }
     }
+}
+
+fn set_current_theme(theme: Arc<Theme>) {
+    CURRENT_THEME.with(|t| {
+        *t.borrow_mut() = Some(theme);
+    });
 }
 
 struct HighlightCache {
@@ -53,7 +71,8 @@ struct HighlightCache {
 
 /// Syntax highlighter for code blocks
 pub struct SyntaxHighlighter {
-    theme_name: SharedString,
+    /// Override theme name (if None, uses global registry's current theme)
+    theme_name_override: Option<SharedString>,
 }
 
 impl Default for SyntaxHighlighter {
@@ -63,17 +82,34 @@ impl Default for SyntaxHighlighter {
 }
 
 impl SyntaxHighlighter {
-    /// Create a new syntax highlighter with default themes
+    /// Create a new syntax highlighter that uses the global theme registry
     pub fn new() -> Self {
         Self {
-            theme_name: SharedString::from("base16-ocean.dark"),
+            theme_name_override: None,
         }
     }
 
-    /// Set the highlighting theme
+    /// Set an override theme (bypasses global registry)
     pub fn with_theme(mut self, theme_name: impl Into<String>) -> Self {
-        self.theme_name = SharedString::from(theme_name.into());
+        self.theme_name_override = Some(SharedString::from(theme_name.into()));
         self
+    }
+
+    /// Get the theme to use for highlighting
+    fn get_theme(&self, cx: &App) -> (SharedString, Arc<Theme>) {
+        if let Some(override_name) = &self.theme_name_override {
+            // Use override theme
+            let registry = CodeThemeRegistry::global(cx);
+            if let Some(theme) = registry.get_theme(override_name.as_ref()) {
+                return (override_name.clone(), theme);
+            }
+        }
+
+        // Use global registry's current theme
+        let registry = CodeThemeRegistry::global(cx);
+        let name = registry.current_theme_name();
+        let theme = registry.current_theme();
+        (SharedString::from(name), theme)
     }
 
     /// Highlight code and return GPUI elements
@@ -95,12 +131,17 @@ impl SyntaxHighlighter {
             },
         );
         let normalized = normalize_language(language);
+        let (theme_name, theme) = self.get_theme(cx);
+
         let source = HighlightSource {
             code: SharedString::from(code.to_string()),
             language: SharedString::from(normalized.to_string()),
-            theme: self.theme_name.clone(),
+            theme_name,
         };
         let source_hash = hash_source(&source);
+
+        // Set theme in thread-local for async asset loading
+        set_current_theme(theme);
 
         let lines = match window.use_asset::<HighlightAsset>(&source, cx) {
             Some(cached_lines) => {
@@ -187,20 +228,14 @@ impl SyntaxHighlighter {
     }
 }
 
-fn highlight_code(source: &HighlightSource) -> HighlightedLines {
+fn highlight_code(source: &HighlightSource, theme: &Theme) -> HighlightedLines {
     let syntax_set = SYNTAX_SET.clone();
-    let theme_set = THEME_SET.clone();
     let normalized_lang = normalize_language(source.language.as_ref());
 
     let syntax = syntax_set
         .find_syntax_by_token(normalized_lang)
         .or_else(|| syntax_set.find_syntax_by_extension(normalized_lang))
         .unwrap_or_else(|| syntax_set.find_syntax_plain_text());
-
-    let theme = theme_set
-        .themes
-        .get(source.theme.as_ref())
-        .unwrap_or_else(|| theme_set.themes.values().next().unwrap());
 
     let mut highlighter = HighlightLines::new(syntax, theme);
     let mut cached_lines: HighlightedLines = Vec::new();

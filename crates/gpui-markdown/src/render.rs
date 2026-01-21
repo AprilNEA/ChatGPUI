@@ -15,6 +15,9 @@ use crate::parser::{MarkdownElement, MarkdownParser};
 #[cfg(feature = "syntax-highlighting")]
 use crate::syntax::SyntaxHighlighter;
 
+#[cfg(feature = "syntax-highlighting")]
+use crate::theme_registry::CodeThemeRegistry;
+
 struct MarkdownParseAsset;
 
 #[allow(clippy::manual_async_fn)]
@@ -148,11 +151,63 @@ impl RenderOnce for Markdown {
             allow_highlighting: self.allow_highlighting,
         };
 
+        // Get code theme colors from the registry (when syntax highlighting is enabled)
+        #[cfg(feature = "syntax-highlighting")]
+        let (code_theme_bg, code_theme_fg) = {
+            let registry = CodeThemeRegistry::global(cx);
+            (registry.current_background(), registry.current_foreground())
+        };
+
+        // Use code theme background if available, otherwise fall back to UI theme
+        #[cfg(feature = "syntax-highlighting")]
+        let default_code_bg = code_theme_bg.unwrap_or_else(|| {
+            if theme.mode.is_dark() {
+                theme.muted
+            } else {
+                hsla(
+                    theme.muted.h,
+                    theme.muted.s * 0.5,
+                    (theme.muted.l + 1.0) / 2.0,
+                    theme.muted.a,
+                )
+            }
+        });
+
+        #[cfg(not(feature = "syntax-highlighting"))]
+        let default_code_bg = if theme.mode.is_dark() {
+            theme.muted
+        } else {
+            hsla(
+                theme.muted.h,
+                theme.muted.s * 0.5,
+                (theme.muted.l + 1.0) / 2.0,
+                theme.muted.a,
+            )
+        };
+
+        // Use code theme foreground if available
+        #[cfg(feature = "syntax-highlighting")]
+        let default_code_fg = code_theme_fg.unwrap_or(theme.foreground);
+
+        #[cfg(not(feature = "syntax-highlighting"))]
+        let default_code_fg = theme.foreground;
+
+        let default_inline_code_bg = if theme.mode.is_dark() {
+            theme.muted
+        } else {
+            hsla(
+                theme.muted.h,
+                theme.muted.s * 0.6,
+                (theme.muted.l + 1.0) / 2.0,
+                theme.muted.a,
+            )
+        };
+
         let style = ResolvedStyle {
             text_size: self.style.text_size,
-            code_bg: self.style.code_bg.unwrap_or(theme.muted),
-            code_fg: self.style.code_fg.unwrap_or(theme.foreground),
-            inline_code_bg: self.style.inline_code_bg.unwrap_or(theme.muted),
+            code_bg: self.style.code_bg.unwrap_or(default_code_bg),
+            code_fg: self.style.code_fg.unwrap_or(default_code_fg),
+            inline_code_bg: self.style.inline_code_bg.unwrap_or(default_inline_code_bg),
             link_color: self.style.link_color.unwrap_or(theme.link),
             blockquote_border: self.style.blockquote_border.unwrap_or(theme.border),
             muted_foreground: theme.muted_foreground,

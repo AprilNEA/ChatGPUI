@@ -12,9 +12,13 @@ mod render;
 
 #[cfg(feature = "syntax-highlighting")]
 mod syntax;
+#[cfg(feature = "syntax-highlighting")]
+mod theme_registry;
 
 pub use parser::MarkdownParser;
 pub use render::{Markdown, MarkdownStyle};
 
 #[cfg(feature = "syntax-highlighting")]
 pub use syntax::SyntaxHighlighter;
+#[cfg(feature = "syntax-highlighting")]
+pub use theme_registry::{CodeThemeEntry, CodeThemeRegistry, CodeThemeSource};

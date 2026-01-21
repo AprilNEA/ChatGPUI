@@ -52,6 +52,9 @@ pub enum AccentColor {
 /// Appearance settings
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct AppearanceSettings {
+    /// Theme name (e.g., "Tokyo Night", "Catppuccin Mocha")
+    #[serde(default)]
+    pub theme: Option<String>,
     #[serde(default)]
     pub mode: AppearanceMode,
     #[serde(default)]
@@ -62,9 +65,24 @@ pub struct AppearanceSettings {
     /// Code font family name (None means system default)
     #[serde(default)]
     pub code_font: Option<String>,
+    /// Code syntax highlighting theme (e.g., "base16-ocean.dark")
+    #[serde(default)]
+    pub code_theme: Option<String>,
 }
 
 impl AppearanceSettings {
+    /// Apply theme configuration
+    pub fn apply_theme(&self, cx: &mut App) {
+        use gpui_component::ThemeRegistry;
+
+        if let Some(theme_name) = &self.theme {
+            let registry = ThemeRegistry::global(cx);
+            if let Some(theme_config) = registry.themes().get(theme_name.as_str()).cloned() {
+                Theme::global_mut(cx).apply_config(&theme_config);
+            }
+        }
+    }
+
     /// Apply appearance mode to the theme system
     pub fn apply_mode(&self, window: Option<&mut Window>, cx: &mut App) {
         match self.mode {
@@ -102,11 +120,32 @@ impl AppearanceSettings {
         }
     }
 
+    /// Apply code syntax highlighting theme
+    pub fn apply_code_theme(&self, cx: &mut App) {
+        use gpui_markdown::CodeThemeRegistry;
+
+        let registry = CodeThemeRegistry::global(cx);
+        if let Some(theme_name) = &self.code_theme {
+            registry.set_current_theme(theme_name);
+        } else {
+            // Use default theme based on UI mode
+            let is_dark = Theme::global(cx).mode.is_dark();
+            let default_theme = if is_dark {
+                "base16-ocean.dark"
+            } else {
+                "base16-ocean.light"
+            };
+            registry.set_current_theme(default_theme);
+        }
+    }
+
     /// Apply all appearance settings
     pub fn apply_all(&self, window: Option<&mut Window>, cx: &mut App) {
+        self.apply_theme(cx);
         self.apply_mode(window, cx);
         self.apply_ui_font(cx);
         self.apply_code_font(cx);
+        self.apply_code_theme(cx);
     }
 }
 
