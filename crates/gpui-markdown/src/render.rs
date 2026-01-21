@@ -203,9 +203,23 @@ impl RenderOnce for Markdown {
             )
         };
 
+        let code_bg = self.style.code_bg.unwrap_or(default_code_bg);
+        // Header background: slightly different from code body for visual separation
+        let code_header_bg = {
+            let is_dark = code_bg.l < 0.5;
+            if is_dark {
+                // Dark theme: make header slightly lighter
+                hsla(code_bg.h, code_bg.s, (code_bg.l + 0.05).min(1.0), code_bg.a)
+            } else {
+                // Light theme: make header slightly darker
+                hsla(code_bg.h, code_bg.s, (code_bg.l - 0.03).max(0.0), code_bg.a)
+            }
+        };
+
         let style = ResolvedStyle {
             text_size: self.style.text_size,
-            code_bg: self.style.code_bg.unwrap_or(default_code_bg),
+            code_bg,
+            code_header_bg,
             code_fg: self.style.code_fg.unwrap_or(default_code_fg),
             inline_code_bg: self.style.inline_code_bg.unwrap_or(default_inline_code_bg),
             link_color: self.style.link_color.unwrap_or(theme.link),
@@ -269,6 +283,7 @@ impl RenderOnce for Markdown {
 struct ResolvedStyle {
     text_size: Pixels,
     code_bg: Hsla,
+    code_header_bg: Hsla,
     code_fg: Hsla,
     inline_code_bg: Hsla,
     link_color: Hsla,
@@ -443,6 +458,7 @@ fn render_element(
                 .justify_between()
                 .px_3()
                 .py_2()
+                .bg(style.code_header_bg)
                 .border_b_1()
                 .border_color(style.code_border)
                 .child(header_left)
