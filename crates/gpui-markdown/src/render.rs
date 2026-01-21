@@ -60,7 +60,7 @@ pub struct MarkdownStyle {
 impl Default for MarkdownStyle {
     fn default() -> Self {
         Self {
-            text_size: px(14.),
+            text_size: px(15.),
             code_bg: None,
             code_fg: None,
             inline_code_bg: None,

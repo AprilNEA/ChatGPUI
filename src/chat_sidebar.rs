@@ -17,6 +17,7 @@ use gpui_component::{
     v_flex, v_virtual_list,
 };
 
+use crate::assets::{AppIcon, ButtonAppIconExt};
 use crate::settings::OpenSettings;
 use gpui_tokio_bridge::Tokio;
 use uuid::Uuid;
@@ -772,7 +773,7 @@ impl ChatSidebar {
                     // Settings button
                     .child(
                         Button::new("settings")
-                            .icon(IconName::Settings)
+                            .app_icon(AppIcon::Settings)
                             .ghost()
                             .on_click(|_, window, cx| {
                                 window.dispatch_action(Box::new(OpenSettings), cx);

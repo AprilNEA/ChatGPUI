@@ -21,7 +21,7 @@ use gpui_component::{
     v_flex,
 };
 
-use crate::assets::AppIcon;
+use crate::assets::{AppIcon, ButtonAppIconExt};
 
 use super::{
     AccentColor, AppearanceMode, AuthMethod, IconPlacement, SendShortcut, get_settings,
@@ -1062,21 +1062,21 @@ impl SettingsView {
                 // Language row
                 .child(self.render_settings_row(
                     language_label,
-                    Select::new(&self.language_select).w(px(140.)),
+                    Select::new(&self.language_select).w(px(200.)),
                     cx,
                 ))
                 .child(Divider::horizontal())
                 // Send shortcut row
                 .child(self.render_settings_row(
                     shortcut_label,
-                    Select::new(&self.shortcut_select).w(px(140.)),
+                    Select::new(&self.shortcut_select).w(px(200.)),
                     cx,
                 ))
                 .child(Divider::horizontal())
                 // Icon placement row
                 .child(self.render_settings_row(
                     icon_label,
-                    Select::new(&self.icon_select).w(px(140.)),
+                    Select::new(&self.icon_select).w(px(200.)),
                     cx,
                 ))
                 .child(Divider::horizontal())
@@ -1228,8 +1228,12 @@ impl SettingsView {
                     .px_2()
                     .py_2()
                     .gap_1()
-                    .child(Button::new("add-provider").icon(AppIcon::Plus).ghost())
-                    .child(Button::new("remove-provider").icon(AppIcon::Minus).ghost()),
+                    .child(Button::new("add-provider").app_icon(AppIcon::Plus).ghost())
+                    .child(
+                        Button::new("remove-provider")
+                            .app_icon(AppIcon::Minus)
+                            .ghost(),
+                    ),
             )
     }
 
@@ -1353,7 +1357,7 @@ impl SettingsView {
                                         )
                                         .child(
                                             Button::new("toggle-visibility")
-                                                .icon(if show_api_key {
+                                                .app_icon(if show_api_key {
                                                     AppIcon::EyeOff
                                                 } else {
                                                     AppIcon::Eye

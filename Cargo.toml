@@ -99,15 +99,7 @@ libc = "0.2"
 # macOS dock icon and SF Symbols
 [target.'cfg(target_os = "macos")'.dependencies]
 cocoa = "0.26"
-objc2 = "0.6"
-objc2-foundation = { version = "0.3", features = ["NSString", "NSData", "NSDictionary", "NSGeometry"] }
-objc2-app-kit = { version = "0.3", features = [
-    "NSImage",
-    "NSBitmapImageRep",
-    "NSGraphicsContext",
-    "NSImageRep",
-    "NSColor",
-] }
+gpui-symbols = "0.6.0"
 
 [package.metadata.bundle]
 name = "ChatGPUI"
