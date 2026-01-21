@@ -976,6 +976,7 @@ impl SettingsView {
         let theme = cx.theme();
 
         v_flex()
+            .w_full()
             .flex_1()
             .h_full()
             .overflow_y_scrollbar()
@@ -1007,8 +1008,13 @@ impl SettingsView {
             .py_3()
             .justify_between()
             .items_center()
-            .child(Label::new(label).text_color(theme.foreground))
-            .child(control)
+            .child(
+                v_flex()
+                    .flex_1()
+                    .min_w_0()
+                    .child(Label::new(label).text_color(theme.foreground)),
+            )
+            .child(h_flex().flex_shrink_0().child(control))
     }
 
     /// Render a settings row with label, description, and control
@@ -1030,6 +1036,8 @@ impl SettingsView {
             .child(
                 v_flex()
                     .gap_0p5()
+                    .flex_1()
+                    .min_w_0()
                     .child(Label::new(label).text_color(theme.foreground))
                     .child(
                         Label::new(description)
@@ -1037,7 +1045,7 @@ impl SettingsView {
                             .text_color(theme.muted_foreground),
                     ),
             )
-            .child(control)
+            .child(h_flex().flex_shrink_0().child(control))
     }
 
     // ========================================================================
@@ -1059,24 +1067,25 @@ impl SettingsView {
 
         self.render_settings_page(
             v_flex()
+                .w_full()
                 // Language row
                 .child(self.render_settings_row(
                     language_label,
-                    Select::new(&self.language_select).w(px(200.)),
+                    Select::new(&self.language_select).w(px(280.)),
                     cx,
                 ))
                 .child(Divider::horizontal())
                 // Send shortcut row
                 .child(self.render_settings_row(
                     shortcut_label,
-                    Select::new(&self.shortcut_select).w(px(200.)),
+                    Select::new(&self.shortcut_select).w(px(280.)),
                     cx,
                 ))
                 .child(Divider::horizontal())
                 // Icon placement row
                 .child(self.render_settings_row(
                     icon_label,
-                    Select::new(&self.icon_select).w(px(200.)),
+                    Select::new(&self.icon_select).w(px(280.)),
                     cx,
                 ))
                 .child(Divider::horizontal())
@@ -1098,7 +1107,7 @@ impl SettingsView {
                 .child(self.render_settings_row_with_desc(
                     proxy_label,
                     proxy_desc,
-                    Input::new(&self.proxy_input).w(px(200.)).cleanable(true),
+                    Input::new(&self.proxy_input).w(px(280.)).cleanable(true),
                     cx,
                 )),
             cx,
@@ -1123,24 +1132,25 @@ impl SettingsView {
 
         self.render_settings_page(
             v_flex()
+                .w_full()
                 // Theme row
                 .child(self.render_settings_row(
                     theme_label,
-                    Select::new(&self.theme_select).w(px(200.)),
+                    Select::new(&self.theme_select).w(px(280.)),
                     cx,
                 ))
                 .child(Divider::horizontal())
                 // Appearance mode row
                 .child(self.render_settings_row(
                     appearance_mode_label,
-                    Select::new(&self.appearance_mode_select).w(px(140.)),
+                    Select::new(&self.appearance_mode_select).w(px(280.)),
                     cx,
                 ))
                 .child(Divider::horizontal())
                 // Accent color row
                 .child(self.render_settings_row(
                     accent_color_label,
-                    Select::new(&self.accent_color_select).w(px(140.)),
+                    Select::new(&self.accent_color_select).w(px(280.)),
                     cx,
                 ))
                 .child(Divider::horizontal())
@@ -1148,7 +1158,7 @@ impl SettingsView {
                 .child(self.render_settings_row_with_desc(
                     ui_font_label,
                     ui_font_desc,
-                    Select::new(&self.ui_font_select).w(px(180.)),
+                    Select::new(&self.ui_font_select).w(px(280.)),
                     cx,
                 ))
                 .child(Divider::horizontal())
@@ -1156,7 +1166,7 @@ impl SettingsView {
                 .child(self.render_settings_row_with_desc(
                     code_font_label,
                     code_font_desc,
-                    Select::new(&self.code_font_select).w(px(180.)),
+                    Select::new(&self.code_font_select).w(px(280.)),
                     cx,
                 ))
                 .child(Divider::horizontal())
@@ -1164,7 +1174,7 @@ impl SettingsView {
                 .child(self.render_settings_row_with_desc(
                     code_theme_label,
                     code_theme_desc,
-                    Select::new(&self.code_theme_select).w(px(200.)),
+                    Select::new(&self.code_theme_select).w(px(280.)),
                     cx,
                 )),
             cx,
@@ -1444,7 +1454,9 @@ impl Render for SettingsView {
             .child(
                 v_flex()
                     .flex_1()
+                    .w_full()
                     .h_full()
+                    .overflow_hidden()
                     .child(self.render_titlebar(cx))
                     .child(self.render_content(cx)),
             )

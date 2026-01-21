@@ -60,7 +60,7 @@ pub struct MarkdownStyle {
 impl Default for MarkdownStyle {
     fn default() -> Self {
         Self {
-            text_size: px(15.),
+            text_size: px(16.),
             code_bg: None,
             code_fg: None,
             inline_code_bg: None,
@@ -468,7 +468,7 @@ fn render_element(
                 .w_full()
                 .px_3()
                 .py_3()
-                .text_size(theme.mono_font_size)
+                .text_size(px(16.))
                 .font_family(theme.mono_font_family.clone())
                 .text_color(style.code_fg)
                 .id(context.code_block_scroll_id(code_block_index))
