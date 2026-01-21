@@ -330,6 +330,10 @@ thinking.duration:
   en: "Thought for"
   zh-CN: "思考"
 
+thinking.seconds:
+  en: "s"
+  zh-CN: "秒"
+
 # Appearance Settings
 settings.theme:
   en: "Theme"

@@ -15,15 +15,18 @@ use std::time::Instant;
 use gpui::prelude::FluentBuilder;
 use gpui::*;
 use gpui_component::{
-    ActiveTheme, h_flex, label::Label, skeleton::Skeleton, v_flex, v_virtual_list,
+    ActiveTheme, Icon, h_flex, label::Label, scroll::Scrollbar, skeleton::Skeleton, v_flex,
+    v_virtual_list,
 };
 use gpui_markdown::Markdown;
 use rust_i18n::t;
 use uuid::Uuid;
 
+use crate::assets::{AppIcon, LlmProvider};
 use crate::message::{Message, MessageStatus, Role};
 use crate::scroll_manager::ScrollManager;
 use crate::settings::get_settings;
+use std::str::FromStr;
 
 const DEFAULT_CONTENT_WIDTH: Pixels = px(640.);
 const LIST_HORIZONTAL_PADDING: Pixels = px(16.);
@@ -572,29 +575,45 @@ impl Render for MessageList {
         self.scroll_manager.apply_pending_scroll(auto_scroll);
 
         let view = cx.entity();
-        v_virtual_list(
-            view,
-            "message-list",
-            self.item_sizes.clone(),
-            |this, visible_range, window, cx| {
-                this.update_content_width(cx);
-                this.measure_visible_items(visible_range.clone(), window, cx);
-                let mut items = Vec::with_capacity(visible_range.len());
-                for ix in visible_range {
-                    if let Some(item) = this.virtual_items.get(ix) {
-                        items.push(item.clone());
-                    }
-                }
-                items
-            },
-        )
-        .flex_1()
-        .w_full()
-        .min_h_0()
-        .p_4()
-        .gap_6()
-        .overflow_x_hidden()
-        .track_scroll(self.scroll_manager.handle())
+        let scroll_handle = self.scroll_manager.handle().clone();
+
+        div()
+            .relative()
+            .flex_1()
+            .w_full()
+            .min_h_0()
+            .child(
+                v_virtual_list(
+                    view,
+                    "message-list",
+                    self.item_sizes.clone(),
+                    |this, visible_range, window, cx| {
+                        this.update_content_width(cx);
+                        this.measure_visible_items(visible_range.clone(), window, cx);
+                        let mut items = Vec::with_capacity(visible_range.len());
+                        for ix in visible_range {
+                            if let Some(item) = this.virtual_items.get(ix) {
+                                items.push(item.clone());
+                            }
+                        }
+                        items
+                    },
+                )
+                .size_full()
+                .p_4()
+                .gap_6()
+                .overflow_x_hidden()
+                .track_scroll(self.scroll_manager.handle()),
+            )
+            .child(
+                div()
+                    .absolute()
+                    .top_0()
+                    .right_0()
+                    .bottom_0()
+                    .w(px(16.))
+                    .child(Scrollbar::vertical(&scroll_handle)),
+            )
     }
 }
 
@@ -948,109 +967,144 @@ impl Render for MessageItem {
                 .child(bubble)
                 .id(self.element_id.clone())
         } else {
-            // Assistant messages: full-width, no bubble, direct Markdown rendering
-            v_flex()
+            // Assistant messages: with avatar on left, content on right
+            // Get the active provider for the avatar icon
+            let provider_icon = get_settings(cx)
+                .active_provider_id
+                .as_ref()
+                .and_then(|id| LlmProvider::from_str(id).ok());
+
+            h_flex()
                 .w_full()
                 .flex_shrink_0()
                 .overflow_hidden()
-                .gap_2()
+                .gap_3()
+                .items_start()
+                // Avatar with provider icon
                 .child(
-                    // Optional: Add a subtle label for assistant
-                    Label::new("Assistant")
-                        .text_xs()
-                        .text_color(theme.muted_foreground),
+                    div()
+                        .flex_shrink_0()
+                        .size_8()
+                        .rounded_full()
+                        .bg(theme.muted)
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .map(|this| {
+                            if let Some(provider) = provider_icon {
+                                this.child(Icon::new(provider).size_5().text_color(theme.foreground))
+                            } else {
+                                this.child(Icon::new(AppIcon::Bot).size_5().text_color(theme.foreground))
+                            }
+                        }),
                 )
-                // Thinking section (collapsible)
-                .when(has_thinking, |this| {
-                    let thinking_header_text = if is_thinking_done {
-                        if let Some(duration) = thinking_duration_ms {
-                            let seconds = duration as f64 / 1000.0;
-                            format!("{} {:.1}s", t!("thinking.duration"), seconds)
-                        } else {
-                            t!("thinking.duration").to_string()
-                        }
-                    } else {
-                        t!("thinking.in_progress").to_string()
-                    };
+                // Message content column
+                .child(
+                    v_flex()
+                        .flex_1()
+                        .min_w_0()
+                        .gap_2()
+                        // Thinking section (collapsible pill button)
+                        .when(has_thinking, |this| {
+                            let thinking_header_text = if is_thinking_done {
+                                if let Some(duration) = thinking_duration_ms {
+                                    let seconds = duration as f64 / 1000.0;
+                                    format!("{} {:.0} {}", t!("thinking.duration"), seconds, t!("thinking.seconds"))
+                                } else {
+                                    t!("thinking.duration").to_string()
+                                }
+                            } else {
+                                t!("thinking.in_progress").to_string()
+                            };
 
-                    let arrow = if thinking_collapsed { "▶" } else { "▼" };
-                    let header_text = format!("{} {} {}", arrow, "🧠", thinking_header_text);
-
-                    this.child(
-                        v_flex()
-                            .w_full()
-                            .gap_1()
-                            .child(
-                                // Collapsible header
-                                div()
-                                    .id("thinking-header")
-                                    .cursor_pointer()
-                                    .px_2()
-                                    .py_1()
-                                    .rounded_md()
-                                    .bg(theme.muted.opacity(0.5))
-                                    .hover(|this| this.bg(theme.muted))
-                                    .on_click(cx.listener(|this, _, _window, cx| {
-                                        this.toggle_thinking_collapsed(cx);
-                                    }))
+                            this.child(
+                                v_flex()
+                                    .w_full()
+                                    .gap_2()
                                     .child(
                                         h_flex()
                                             .gap_2()
                                             .items_center()
+                                            // Thinking pill button
                                             .child(
-                                                Label::new(header_text)
-                                                    .text_xs()
-                                                    .text_color(theme.muted_foreground),
-                                            )
-                                            .when(!is_thinking_done, |this| {
-                                                // Pulsing animation when thinking
-                                                this.child(
-                                                    div()
-                                                        .size_2()
-                                                        .rounded_full()
-                                                        .bg(theme.accent)
-                                                        .with_animation(
-                                                            "thinking-pulse",
-                                                            Animation::new(Duration::from_millis(
-                                                                800,
-                                                            ))
-                                                            .repeat()
-                                                            .with_easing(pulsating_between(
-                                                                0.3, 1.0,
-                                                            )),
-                                                            |this, delta| this.opacity(delta),
-                                                        ),
-                                                )
-                                            }),
-                                    ),
-                            )
-                            // Thinking content (shown when expanded)
-                            .when(!thinking_collapsed, |this| {
-                                if let Some(thinking_text) = &thinking_content_opt {
-                                    this.child(
-                                        div()
-                                            .w_full()
-                                            .px_2()
-                                            .py_2()
-                                            .rounded_md()
-                                            .bg(theme.muted.opacity(0.3))
-                                            .border_l_2()
-                                            .border_color(theme.muted_foreground.opacity(0.3))
-                                            .child(
-                                                Label::new(thinking_text.clone())
-                                                    .text_xs()
-                                                    .text_color(theme.muted_foreground),
+                                                div()
+                                                    .id("thinking-header")
+                                                    .cursor_pointer()
+                                                    .px_3()
+                                                    .py_1()
+                                                    .rounded_full()
+                                                    .border_1()
+                                                    .border_color(theme.border)
+                                                    .bg(theme.background)
+                                                    .hover(|this| this.bg(theme.muted.opacity(0.5)))
+                                                    .on_click(cx.listener(|this, _, _window, cx| {
+                                                        this.toggle_thinking_collapsed(cx);
+                                                    }))
+                                                    .child(
+                                                        h_flex()
+                                                            .gap_1p5()
+                                                            .items_center()
+                                                            .child(
+                                                                Label::new(thinking_header_text)
+                                                                    .text_xs()
+                                                                    .text_color(theme.muted_foreground),
+                                                            )
+                                                            .when(!is_thinking_done, |this| {
+                                                                // Pulsing dot when thinking
+                                                                this.child(
+                                                                    div()
+                                                                        .size(px(6.))
+                                                                        .rounded_full()
+                                                                        .bg(theme.accent)
+                                                                        .with_animation(
+                                                                            "thinking-pulse",
+                                                                            Animation::new(Duration::from_millis(800))
+                                                                                .repeat()
+                                                                                .with_easing(pulsating_between(0.3, 1.0)),
+                                                                            |this, delta| this.opacity(delta),
+                                                                        ),
+                                                                )
+                                                            })
+                                                            .when(is_thinking_done, |this| {
+                                                                // Chevron icon
+                                                                this.child(
+                                                                    Icon::new(if thinking_collapsed {
+                                                                        AppIcon::ChevronDown
+                                                                    } else {
+                                                                        AppIcon::ChevronUp
+                                                                    })
+                                                                    .size_3()
+                                                                    .text_color(theme.muted_foreground),
+                                                                )
+                                                            }),
+                                                    ),
                                             ),
                                     )
-                                } else {
-                                    this
-                                }
-                            }),
-                    )
-                })
-                .child(
-                    v_flex()
-                        .w_full()
+                                    // Thinking content (shown when expanded)
+                                    .when(!thinking_collapsed, |this| {
+                                        if let Some(thinking_text) = &thinking_content_opt {
+                                            this.child(
+                                                div()
+                                                    .w_full()
+                                                    .px_3()
+                                                    .py_2()
+                                                    .rounded_lg()
+                                                    .bg(theme.muted.opacity(0.3))
+                                                    .border_l_2()
+                                                    .border_color(theme.muted_foreground.opacity(0.3))
+                                                    .child(
+                                                        Label::new(thinking_text.clone())
+                                                            .text_xs()
+                                                            .text_color(theme.muted_foreground),
+                                                    ),
+                                            )
+                                        } else {
+                                            this
+                                        }
+                                    }),
+                            )
+                        })
+                        // Main content (markdown or skeleton)
                         .when(content.is_empty() && is_streaming, |this| {
                             this.child(Skeleton::new().h_4().w_48())
                         })
@@ -1059,91 +1113,86 @@ impl Render for MessageItem {
                                 Markdown::new(content.clone(), message_id)
                                     .allow_syntax_highlighting(!is_streaming),
                             )
-                        }),
-                )
-                .when(is_streaming, |this| {
-                    this.child(
-                        h_flex()
-                            .gap_1()
-                            .child(
-                                div()
-                                    .size_4()
-                                    .rounded_full()
-                                    .bg(theme.muted_foreground)
-                                    .with_animation(
-                                        "pulse-1",
-                                        Animation::new(Duration::from_secs(1))
-                                            .repeat()
-                                            .with_easing(pulsating_between(0.4, 1.0)),
-                                        |this, delta| this.opacity(delta),
+                        })
+                        // Streaming indicator dots
+                        .when(is_streaming, |this| {
+                            this.child(
+                                h_flex()
+                                    .gap_1()
+                                    .child(
+                                        div()
+                                            .size(px(6.))
+                                            .rounded_full()
+                                            .bg(theme.muted_foreground)
+                                            .with_animation(
+                                                "pulse-1",
+                                                Animation::new(Duration::from_secs(1))
+                                                    .repeat()
+                                                    .with_easing(pulsating_between(0.4, 1.0)),
+                                                |this, delta| this.opacity(delta),
+                                            ),
+                                    )
+                                    .child(
+                                        div()
+                                            .size(px(6.))
+                                            .rounded_full()
+                                            .bg(theme.muted_foreground)
+                                            .with_animation(
+                                                "pulse-2",
+                                                Animation::new(Duration::from_secs(1))
+                                                    .repeat()
+                                                    .with_easing(pulsating_between(0.4, 1.0)),
+                                                |this, delta| this.opacity(delta),
+                                            ),
+                                    )
+                                    .child(
+                                        div()
+                                            .size(px(6.))
+                                            .rounded_full()
+                                            .bg(theme.muted_foreground)
+                                            .with_animation(
+                                                "pulse-3",
+                                                Animation::new(Duration::from_secs(1))
+                                                    .repeat()
+                                                    .with_easing(pulsating_between(0.4, 1.0)),
+                                                |this, delta| this.opacity(delta),
+                                            ),
                                     ),
                             )
-                            .child(
-                                div()
-                                    .size_4()
-                                    .rounded_full()
-                                    .bg(theme.muted_foreground)
-                                    .with_animation(
-                                        "pulse-2",
-                                        Animation::new(Duration::from_secs(1))
-                                            .repeat()
-                                            .with_easing(pulsating_between(0.4, 1.0)),
-                                        |this, delta| this.opacity(delta),
-                                    ),
-                            )
-                            .child(
-                                div()
-                                    .size_4()
-                                    .rounded_full()
-                                    .bg(theme.muted_foreground)
-                                    .with_animation(
-                                        "pulse-3",
-                                        Animation::new(Duration::from_secs(1))
-                                            .repeat()
-                                            .with_easing(pulsating_between(0.4, 1.0)),
-                                        |this, delta| this.opacity(delta),
-                                    ),
-                            ),
-                    )
-                })
-                .when(matches!(status, MessageStatus::Error(_)), |this| {
-                    if let MessageStatus::Error(ref err) = status {
-                        this.child(
-                            h_flex()
-                                .w_full()
-                                .overflow_hidden()
-                                .gap_2()
-                                .items_start()
-                                .child(
-                                    div()
-                                        .flex_shrink_0()
-                                        .size_6()
-                                        .rounded_full()
-                                        .bg(theme.danger)
-                                        .flex()
-                                        .items_center()
-                                        .justify_center()
-                                        .text_sm()
-                                        .text_color(gpui::white())
-                                        .child("!"),
-                                )
-                                .child(
-                                    div()
-                                        .flex_1()
-                                        .min_w_0()
+                        })
+                        // Error message
+                        .when(matches!(status, MessageStatus::Error(_)), |this| {
+                            if let MessageStatus::Error(ref err) = status {
+                                this.child(
+                                    h_flex()
+                                        .w_full()
                                         .overflow_hidden()
-                                        .text_ellipsis()
+                                        .gap_2()
+                                        .items_center()
+                                        .child(
+                                            div()
+                                                .flex_shrink_0()
+                                                .size_5()
+                                                .rounded_full()
+                                                .bg(theme.danger)
+                                                .flex()
+                                                .items_center()
+                                                .justify_center()
+                                                .text_xs()
+                                                .text_color(gpui::white())
+                                                .child("!"),
+                                        )
                                         .child(
                                             Label::new(format!("Error: {}", err))
                                                 .text_sm()
                                                 .text_color(theme.danger),
                                         ),
-                                ),
-                        )
-                    } else {
-                        this
-                    }
-                })
+                                )
+                            } else {
+                                this
+                            }
+                        }),
+                )
                 .id(self.element_id.clone())
         }
         .into_any_element()

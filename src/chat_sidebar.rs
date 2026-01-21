@@ -810,8 +810,6 @@ impl Render for ChatSidebar {
         v_flex()
             .size_full()
             .bg(theme.sidebar)
-            .border_r_1()
-            .border_color(theme.border)
             .pt(px(44.)) // Space for traffic lights + toolbar buttons
             .child(self.render_search(cx))
             .child(self.render_history_list(cx))
