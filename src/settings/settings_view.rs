@@ -952,7 +952,7 @@ impl SettingsView {
             .border_color(theme.border)
             .child(
                 Label::new(title)
-                    .text_base()
+                    .text_sm()
                     .font_weight(FontWeight::SEMIBOLD),
             )
             .on_mouse_down(
@@ -1012,7 +1012,7 @@ impl SettingsView {
                 v_flex()
                     .flex_1()
                     .min_w_0()
-                    .child(Label::new(label).text_color(theme.foreground)),
+                    .child(Label::new(label).text_sm().text_color(theme.foreground)),
             )
             .child(h_flex().flex_shrink_0().child(control))
     }
@@ -1038,7 +1038,7 @@ impl SettingsView {
                     .gap_0p5()
                     .flex_1()
                     .min_w_0()
-                    .child(Label::new(label).text_color(theme.foreground))
+                    .child(Label::new(label).text_sm().text_color(theme.foreground))
                     .child(
                         Label::new(description)
                             .text_xs()
@@ -1197,13 +1197,6 @@ impl SettingsView {
             .border_r_1()
             .border_color(theme.border)
             .child(
-                h_flex()
-                    .px_4()
-                    .py_3()
-                    .child(Label::new(t!("settings.provider").to_string()).text_sm()),
-            )
-            .child(Divider::horizontal())
-            .child(
                 v_flex().flex_1().overflow_y_scrollbar().py_1().children(
                     providers
                         .into_iter()
@@ -1227,7 +1220,7 @@ impl SettingsView {
                                         .gap_2()
                                         .items_center()
                                         .child(Self::provider_icon(&provider_id, theme))
-                                        .child(Label::new(provider_name)),
+                                        .child(Label::new(provider_name).text_sm()),
                                 )
                         }),
                 ),
@@ -1301,7 +1294,6 @@ impl SettingsView {
                 .into_any_element();
         };
 
-        let provider_name = provider.name.clone();
         let auth_method = provider.auth_method.clone();
         let show_api_key = self.show_api_key;
 
@@ -1309,17 +1301,6 @@ impl SettingsView {
             .flex_1()
             .h_full()
             .overflow_y_scrollbar()
-            .child(
-                // Provider header
-                h_flex().px_6().py_4().justify_between().child(
-                    h_flex().gap_2().items_center().child(
-                        Label::new(provider_name)
-                            .text_lg()
-                            .font_weight(FontWeight::MEDIUM),
-                    ),
-                ),
-            )
-            .child(Divider::horizontal())
             .child(
                 // Provider settings form
                 v_flex()
@@ -1342,7 +1323,7 @@ impl SettingsView {
                                     .border_1()
                                     .border_color(theme.border)
                                     .bg(theme.background)
-                                    .child(Label::new(auth_method.label())),
+                                    .child(Label::new(auth_method.label()).text_sm()),
                             ),
                     )
                     // API Key
@@ -1360,9 +1341,7 @@ impl SettingsView {
                                         .gap_2()
                                         .child(
                                             v_flex().flex_1().child(
-                                                Input::new(&self.api_key_input)
-                                                    .appearance(false)
-                                                    .cleanable(true),
+                                                Input::new(&self.api_key_input).cleanable(true),
                                             ),
                                         )
                                         .child(
