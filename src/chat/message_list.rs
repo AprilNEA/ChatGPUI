@@ -15,7 +15,7 @@ use std::time::Instant;
 use gpui::prelude::FluentBuilder;
 use gpui::*;
 use gpui_component::{
-    ActiveTheme, Icon, IconName,
+    ActiveTheme, Icon, IconName, Sizable,
     button::{Button, ButtonVariants},
     h_flex,
     label::Label,
@@ -27,7 +27,7 @@ use gpui_component::{
 use rust_i18n::t;
 use uuid::Uuid;
 
-use crate::icons::{AppIcon, LlmProvider};
+use crate::icons::{AppIcon, ButtonAppIconExt, LlmProvider};
 use crate::settings::get_settings;
 
 use super::message::{Message, MessageStatus, Role};
@@ -41,8 +41,8 @@ const USER_BUBBLE_PADDING_X: Pixels = px(16.);
 const USER_BUBBLE_PADDING_Y: Pixels = px(12.);
 const ASSISTANT_LABEL_HEIGHT: Pixels = px(14.);
 const ASSISTANT_LABEL_GAP: Pixels = px(8.);
-const STREAMING_DOTS_HEIGHT: Pixels = px(16.);
-const STREAMING_DOTS_GAP: Pixels = px(8.);
+const STREAMING_DOT_HEIGHT: Pixels = px(8.);
+const STREAMING_DOT_GAP: Pixels = px(8.);
 const ERROR_ROW_HEIGHT: Pixels = px(20.);
 const ERROR_ROW_GAP: Pixels = px(8.);
 const THINKING_HEADER_HEIGHT: Pixels = px(28.); // Header with padding
@@ -866,7 +866,7 @@ fn estimate_item_height(
             }
 
             if matches!(status, MessageStatus::Streaming) {
-                height += STREAMING_DOTS_GAP + STREAMING_DOTS_HEIGHT;
+                height += STREAMING_DOT_GAP + STREAMING_DOT_HEIGHT;
             }
             if matches!(status, MessageStatus::Error(_)) {
                 height += ERROR_ROW_GAP + ERROR_ROW_HEIGHT;
@@ -966,6 +966,10 @@ impl Render for MessageItem {
         let thinking_collapsed = self.thinking_collapsed;
         let has_thinking = thinking_content_opt.is_some();
 
+        // Action buttons for messages (shown when not streaming)
+        let show_actions = !is_streaming;
+        let content_for_copy = content.clone();
+
         if is_user {
             // User messages: bubble style, right-aligned
             let bubble = v_flex()
@@ -977,10 +981,55 @@ impl Render for MessageItem {
                 .text_color(accent_foreground)
                 .child(v_flex().text_sm().child(Label::new(content)));
 
-            h_flex()
-                .w_full()
+            // User action buttons (right-aligned)
+            let action_buttons = h_flex()
+                .gap_1()
                 .justify_end()
+                .child(
+                    Button::new("copy")
+                        .app_icon(AppIcon::Copy)
+                        .ghost()
+                        .small()
+                        .on_click(move |_, _, cx| {
+                            cx.write_to_clipboard(ClipboardItem::new_string(
+                                content_for_copy.to_string(),
+                            ));
+                        }),
+                )
+                .child(
+                    Button::new("edit")
+                        .app_icon(AppIcon::Edit)
+                        .ghost()
+                        .small()
+                        .on_click(cx.listener(|_this, _, _window, _cx| {
+                            // TODO: Implement edit
+                        })),
+                )
+                .child(
+                    Button::new("retry")
+                        .app_icon(AppIcon::RotateCcw)
+                        .ghost()
+                        .small()
+                        .on_click(cx.listener(|_this, _, _window, _cx| {
+                            // TODO: Implement retry
+                        })),
+                )
+                .child(
+                    Button::new("more")
+                        .app_icon(AppIcon::Ellipsis)
+                        .ghost()
+                        .small()
+                        .on_click(cx.listener(|_this, _, _window, _cx| {
+                            // TODO: Implement dropdown menu
+                        })),
+                );
+
+            v_flex()
+                .w_full()
+                .items_end()
+                .gap_1()
                 .child(bubble)
+                .when(show_actions, |this| this.child(action_buttons))
                 .id(self.element_id.clone())
         } else {
             // Assistant messages: with avatar on left, content on right
@@ -1161,49 +1210,19 @@ impl Render for MessageItem {
                                 .selectable(true)
                             )
                         })
-                        // Streaming indicator dots
+                        // Streaming indicator: breathing dot
                         .when(is_streaming, |this| {
                             this.child(
-                                h_flex()
-                                    .gap_1()
-                                    .child(
-                                        div()
-                                            .size(px(6.))
-                                            .rounded_full()
-                                            .bg(muted_foreground)
-                                            .with_animation(
-                                                "pulse-1",
-                                                Animation::new(Duration::from_secs(1))
-                                                    .repeat()
-                                                    .with_easing(pulsating_between(0.4, 1.0)),
-                                                |this, delta| this.opacity(delta),
-                                            ),
-                                    )
-                                    .child(
-                                        div()
-                                            .size(px(6.))
-                                            .rounded_full()
-                                            .bg(muted_foreground)
-                                            .with_animation(
-                                                "pulse-2",
-                                                Animation::new(Duration::from_secs(1))
-                                                    .repeat()
-                                                    .with_easing(pulsating_between(0.4, 1.0)),
-                                                |this, delta| this.opacity(delta),
-                                            ),
-                                    )
-                                    .child(
-                                        div()
-                                            .size(px(6.))
-                                            .rounded_full()
-                                            .bg(muted_foreground)
-                                            .with_animation(
-                                                "pulse-3",
-                                                Animation::new(Duration::from_secs(1))
-                                                    .repeat()
-                                                    .with_easing(pulsating_between(0.4, 1.0)),
-                                                |this, delta| this.opacity(delta),
-                                            ),
+                                div()
+                                    .size(px(8.))
+                                    .rounded_full()
+                                    .bg(accent)
+                                    .with_animation(
+                                        "breathing",
+                                        Animation::new(Duration::from_millis(1500))
+                                            .repeat()
+                                            .with_easing(pulsating_between(0.3, 1.0)),
+                                        |this, delta| this.opacity(delta),
                                     ),
                             )
                         })
@@ -1238,6 +1257,52 @@ impl Render for MessageItem {
                             } else {
                                 this
                             }
+                        })
+                        // Assistant action buttons (left-aligned)
+                        .when(show_actions, |this| {
+                            let content_to_copy = content.clone();
+                            this.child(
+                                h_flex()
+                                    .gap_1()
+                                    .child(
+                                        Button::new("copy")
+                                            .app_icon(AppIcon::Copy)
+                                            .ghost()
+                                            .small()
+                                            .on_click(move |_, _, cx| {
+                                                cx.write_to_clipboard(ClipboardItem::new_string(
+                                                    content_to_copy.to_string(),
+                                                ));
+                                            }),
+                                    )
+                                    .child(
+                                        Button::new("retry")
+                                            .app_icon(AppIcon::RotateCcw)
+                                            .ghost()
+                                            .small()
+                                            .on_click(cx.listener(|_this, _, _window, _cx| {
+                                                // TODO: Implement retry
+                                            })),
+                                    )
+                                    .child(
+                                        Button::new("edit")
+                                            .app_icon(AppIcon::Edit)
+                                            .ghost()
+                                            .small()
+                                            .on_click(cx.listener(|_this, _, _window, _cx| {
+                                                // TODO: Implement edit
+                                            })),
+                                    )
+                                    .child(
+                                        Button::new("more")
+                                            .app_icon(AppIcon::Ellipsis)
+                                            .ghost()
+                                            .small()
+                                            .on_click(cx.listener(|_this, _, _window, _cx| {
+                                                // TODO: Implement dropdown menu
+                                            })),
+                                    ),
+                            )
                         }),
                 )
                 .id(self.element_id.clone())

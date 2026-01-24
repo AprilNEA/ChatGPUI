@@ -103,6 +103,7 @@ Tables: `conversations`, `messages`, `attachments`
 - **License Header**: All files include SPDX headers (AGPL-3.0-only OR LicenseRef-Commercial)
 - **i18n**: Default locale zh-CN, translations in `locales/`
 - **Assets**: Embedded via rust-embed, icons in `assets/icons/`
+- **Icon Source**: MGC Icon System Pro v1.40, use `light` variant (`/Users/Shiro/Developer/MGC Icon System Pro v1.40/SVG/light/`)
 
 ## Adding a New LLM Provider
 

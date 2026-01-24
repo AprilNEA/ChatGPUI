@@ -29,6 +29,9 @@ pub enum AppIcon {
     Delete,
     Settings,
     Settings2,
+    Edit,
+    RotateCcw,
+    Ellipsis,
 
     // Panels & Layout
     PanelLeft,
