@@ -143,6 +143,18 @@ impl MessageInput {
         self.attachments.clear();
     }
 
+    pub fn set_value(
+        &mut self,
+        value: impl Into<String>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let value = value.into();
+        self.input_state.update(cx, |state, cx| {
+            state.set_value(value, window, cx);
+        });
+    }
+
     fn handle_submit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.is_loading {
             return;

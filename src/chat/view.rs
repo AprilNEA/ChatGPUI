@@ -21,7 +21,7 @@ use super::{
     conversation_cache::ConversationCache,
     message::{Attachment, AttachmentType, ChatMessage, Message, MessageStatus, Role},
     message_input::{MessageInput, SubmitEvent},
-    message_list::MessageList,
+    message_list::{EditMessageEvent, MessageList},
 };
 
 /// Debounce interval for streaming updates (ms).
@@ -71,12 +71,18 @@ pub struct ChatView {
     is_generating: bool,
     current_conversation_id: Option<Uuid>,
     _subscription: Subscription,
+    /// Subscription for MessageList edit events
+    _message_list_subscription: Option<Subscription>,
     /// Debounce task to avoid frequent rerenders during streaming.
     debounce_task: Option<Task<()>>,
     /// Buffered streaming content accumulated during the debounce window.
     pending_stream_chunk: String,
     active_stream: Option<ActiveStream>,
     pending_stream_result: Option<PendingStreamResult>,
+    /// ID of message being edited (if any)
+    editing_message_id: Option<Uuid>,
+    /// Pending edit content to be set in input (will be processed in render)
+    pending_edit_content: Option<String>,
 }
 
 impl EventEmitter<ConversationUpdatedEvent> for ChatView {}
@@ -116,6 +122,12 @@ impl ChatView {
             },
         );
 
+        // Subscribe to MessageList edit events
+        let _message_list_subscription =
+            cx.subscribe(&message_list, |this, _, event: &EditMessageEvent, cx| {
+                this.set_pending_edit(event.message_id, event.content.clone(), cx);
+            });
+
         let messages = vec![Arc::new(Message::system("You are a helpful assistant."))];
 
         Self {
@@ -128,11 +140,38 @@ impl ChatView {
             is_generating: false,
             current_conversation_id: None,
             _subscription,
+            _message_list_subscription: Some(_message_list_subscription),
             debounce_task: None,
             pending_stream_chunk: String::new(),
             active_stream: None,
             pending_stream_result: None,
+            editing_message_id: None,
+            pending_edit_content: None,
         }
+    }
+
+    /// Set pending edit state (to be processed in render when window is available)
+    fn set_pending_edit(&mut self, message_id: Uuid, content: String, cx: &mut Context<Self>) {
+        if self.is_generating {
+            return;
+        }
+        self.editing_message_id = Some(message_id);
+        self.pending_edit_content = Some(content);
+        cx.notify();
+    }
+
+    /// Subscribe to a MessageList's edit events
+    fn subscribe_message_list(
+        &mut self,
+        message_list: &Entity<MessageList>,
+        cx: &mut Context<Self>,
+    ) {
+        self._message_list_subscription = Some(cx.subscribe(
+            message_list,
+            |this, _, event: &EditMessageEvent, cx| {
+                this.set_pending_edit(event.message_id, event.content.clone(), cx);
+            },
+        ));
     }
 
     /// Start a new chat (clear messages and conversation)
@@ -145,9 +184,13 @@ impl ChatView {
             .push(Arc::new(Message::system("You are a helpful assistant.")));
         self.current_conversation_id = None;
         self.clear_streaming_ui_buffer();
+        self.editing_message_id = None;
+        self.pending_edit_content = None;
 
         // Create a new MessageList for the new chat (no conversation ID)
-        self.current_message_list = Some(cx.new(MessageList::new));
+        let message_list = cx.new(MessageList::new);
+        self.subscribe_message_list(&message_list, cx);
+        self.current_message_list = Some(message_list);
         self.update_message_list(cx);
     }
 
@@ -166,10 +209,13 @@ impl ChatView {
         self.messages
             .push(Arc::new(Message::system("You are a helpful assistant.")));
         self.clear_streaming_ui_buffer();
+        self.editing_message_id = None;
+        self.pending_edit_content = None;
 
         // Try to get MessageList from cache (zero-copy switch)
         if let Some(cached_list) = self.conversation_cache.take(conversation_id) {
             tracing::debug!("Cache hit for conversation {}", conversation_id);
+            self.subscribe_message_list(&cached_list, cx);
             self.current_message_list = Some(cached_list);
             // Messages still need to be loaded for API context
             self.load_messages_for_context(conversation_id, cx);
@@ -179,8 +225,9 @@ impl ChatView {
 
         // Cache miss: create new MessageList and load from database
         tracing::debug!("Cache miss for conversation {}", conversation_id);
-        self.current_message_list =
-            Some(cx.new(|cx| MessageList::new_for_conversation(conversation_id, cx)));
+        let message_list = cx.new(|cx| MessageList::new_for_conversation(conversation_id, cx));
+        self.subscribe_message_list(&message_list, cx);
+        self.current_message_list = Some(message_list);
 
         let db = database::get_db(cx).clone();
         let (tx, rx) = async_channel::unbounded();
@@ -367,6 +414,11 @@ impl ChatView {
             return;
         }
 
+        // If editing, truncate messages from the edited message onwards
+        if let Some(edit_id) = self.editing_message_id.take() {
+            self.truncate_messages_from(edit_id, cx);
+        }
+
         let user_message = if attachments.is_empty() {
             Message::user(&content)
         } else {
@@ -389,6 +441,38 @@ impl ChatView {
         }
 
         self.generate_response(window, cx);
+    }
+
+    /// Truncate messages from the given message ID onwards (including the message itself)
+    fn truncate_messages_from(&mut self, message_id: Uuid, cx: &mut Context<Self>) {
+        // Find the index of the message to edit
+        if let Some(index) = self.messages.iter().position(|m| m.id == message_id) {
+            // Collect IDs of messages to delete from database
+            let messages_to_delete: Vec<Uuid> =
+                self.messages[index..].iter().map(|m| m.id).collect();
+
+            // Truncate the messages list
+            self.messages.truncate(index);
+            self.update_message_list(cx);
+
+            // Delete from database if we have a conversation
+            if let Some(conversation_id) = self.current_conversation_id {
+                let db = database::get_db(cx).clone();
+                Tokio::spawn(cx, async move {
+                    for msg_id in messages_to_delete {
+                        if let Err(e) = db.delete_message(msg_id).await {
+                            tracing::error!(
+                                "Failed to delete message {} from conversation {}: {}",
+                                msg_id,
+                                conversation_id,
+                                e
+                            );
+                        }
+                    }
+                })
+                .detach();
+            }
+        }
     }
 
     fn save_attachments_to_storage(
@@ -1093,7 +1177,14 @@ impl ChatView {
 }
 
 impl Render for ChatView {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // Process pending edit content (set input value when window is available)
+        if let Some(content) = self.pending_edit_content.take() {
+            self.message_input.update(cx, |input, cx| {
+                input.set_value(content, window, cx);
+            });
+        }
+
         let theme = cx.theme();
 
         v_flex()

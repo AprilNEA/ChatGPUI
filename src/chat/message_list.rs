@@ -34,6 +34,14 @@ use super::message::{Message, MessageStatus, Role};
 use super::scroll_manager::ScrollManager;
 use std::str::FromStr;
 
+/// Event emitted when user wants to edit a message
+pub struct EditMessageEvent {
+    pub message_id: Uuid,
+    pub content: String,
+}
+
+impl EventEmitter<EditMessageEvent> for MessageList {}
+
 const DEFAULT_CONTENT_WIDTH: Pixels = px(640.);
 const LIST_HORIZONTAL_PADDING: Pixels = px(16.);
 const USER_BUBBLE_MAX_WIDTH: Pixels = px(512.);
@@ -221,6 +229,19 @@ impl MessageList {
         &self.scroll_manager
     }
 
+    /// Subscribe to MessageItem events and forward them as MessageList events
+    fn subscribe_message_item(&self, item: &Entity<MessageItem>, cx: &mut Context<Self>) {
+        cx.subscribe(item, |this, _, event: &MessageItemEditEvent, cx| {
+            cx.emit(EditMessageEvent {
+                message_id: event.message_id,
+                content: event.content.clone(),
+            });
+            cx.notify();
+            let _ = this; // silence unused warning
+        })
+        .detach();
+    }
+
     /// Set historical messages (non-streaming).
     pub fn set_messages(&mut self, messages: Vec<Arc<Message>>, cx: &mut Context<Self>) {
         // Split streaming and history messages.
@@ -238,7 +259,9 @@ impl MessageList {
             let item = if let Some(existing) = self.message_index.get(&message_id) {
                 existing.clone()
             } else {
-                cx.new(|_cx| MessageItem::from_arc(message.clone()))
+                let item = cx.new(|_cx| MessageItem::from_arc(message.clone()));
+                self.subscribe_message_item(&item, cx);
+                item
             };
             next_index.insert(message_id, item.clone());
             next_items.push(item);
@@ -250,7 +273,9 @@ impl MessageList {
         // Store streaming message separately.
         self.streaming_item = streaming.into_iter().next().map(|message| {
             let message = (*message).clone();
-            cx.new(|_cx| MessageItem::from_streaming(message))
+            let item = cx.new(|_cx| MessageItem::from_streaming(message));
+            self.subscribe_message_item(&item, cx);
+            item
         });
 
         self.rebuild_virtual_items();
@@ -331,7 +356,9 @@ impl MessageList {
 
     /// Start a new streaming message.
     pub fn start_streaming(&mut self, message: Message, cx: &mut Context<Self>) {
-        self.streaming_item = Some(cx.new(|_cx| MessageItem::from_streaming(message)));
+        let item = cx.new(|_cx| MessageItem::from_streaming(message));
+        self.subscribe_message_item(&item, cx);
+        self.streaming_item = Some(item);
         self.scroll_manager.scroll_to_bottom_if_following();
         self.rebuild_virtual_items();
         self.rebuild_item_sizes(cx);
@@ -638,6 +665,12 @@ enum MessageSource {
     },
 }
 
+/// Event emitted by MessageItem when edit button is clicked
+pub struct MessageItemEditEvent {
+    pub message_id: Uuid,
+    pub content: String,
+}
+
 pub struct MessageItem {
     id: Uuid,
     element_id: SharedString,
@@ -647,6 +680,8 @@ pub struct MessageItem {
     /// Whether the thinking section is collapsed
     thinking_collapsed: bool,
 }
+
+impl EventEmitter<MessageItemEditEvent> for MessageItem {}
 
 impl MessageItem {
     fn new(id: Uuid, source: MessageSource) -> Self {
@@ -827,6 +862,14 @@ impl MessageItem {
         self.thinking_collapsed = !self.thinking_collapsed;
         cx.notify();
     }
+
+    fn emit_edit(&mut self, cx: &mut Context<Self>) {
+        let content = self.content_str().to_string();
+        cx.emit(MessageItemEditEvent {
+            message_id: self.id,
+            content,
+        });
+    }
 }
 
 fn estimate_item_height(
@@ -1001,8 +1044,8 @@ impl Render for MessageItem {
                         .app_icon(AppIcon::Edit)
                         .ghost()
                         .small()
-                        .on_click(cx.listener(|_this, _, _window, _cx| {
-                            // TODO: Implement edit
+                        .on_click(cx.listener(|this, _, _window, cx| {
+                            this.emit_edit(cx);
                         })),
                 )
                 .child(

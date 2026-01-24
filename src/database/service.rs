@@ -173,6 +173,12 @@ impl DatabaseService {
         MessageRepository::update_status(&conn, id, status, error_message).await
     }
 
+    /// Delete a message by ID
+    pub async fn delete_message(&self, id: Uuid) -> Result<()> {
+        let conn = self.get_connection().await?;
+        MessageRepository::delete(&conn, id).await
+    }
+
     // ============ Attachment Methods ============
 
     /// Create a new attachment record
