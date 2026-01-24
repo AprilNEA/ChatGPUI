@@ -259,7 +259,6 @@ fn mime_from_extension(filename: &str) -> String {
 impl Render for MessageInput {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
-        let is_loading = self.is_loading;
         let has_attachments = !self.attachments.is_empty();
 
         v_flex()
@@ -281,7 +280,7 @@ impl Render for MessageInput {
                             this.handle_shift_enter(window, cx);
                         }
                     }))
-                    .child(Input::new(&self.input_state).w_full().disabled(is_loading)),
+                    .child(Input::new(&self.input_state).w_full()),
             )
             // 底部工具栏
             .child(self.render_toolbar(cx))
