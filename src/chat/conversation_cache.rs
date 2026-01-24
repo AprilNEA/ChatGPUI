@@ -13,7 +13,7 @@ use std::collections::{HashMap, HashSet};
 use gpui::*;
 use uuid::Uuid;
 
-use crate::message_list::MessageList;
+use super::message_list::MessageList;
 
 /// Default maximum number of cached conversations.
 const DEFAULT_MAX_SIZE: usize = 5;

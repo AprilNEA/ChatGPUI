@@ -21,7 +21,7 @@ use gpui_component::{
     v_flex,
 };
 
-use crate::assets::{AppIcon, ButtonAppIconExt};
+use crate::icons::{AppIcon, ButtonAppIconExt};
 
 use super::{
     AccentColor, AppearanceMode, AuthMethod, IconPlacement, SendShortcut, get_settings,
@@ -208,25 +208,6 @@ impl SelectItem for ThemeOption {
     }
 }
 
-/// Code theme option for select
-#[derive(Clone, Debug)]
-struct CodeThemeOption {
-    value: Option<String>,
-    label: String,
-}
-
-impl SelectItem for CodeThemeOption {
-    type Value = Option<String>;
-
-    fn title(&self) -> SharedString {
-        self.label.clone().into()
-    }
-
-    fn value(&self) -> &Self::Value {
-        &self.value
-    }
-}
-
 // ============================================================================
 // Settings View
 // ============================================================================
@@ -250,7 +231,6 @@ pub struct SettingsView {
     accent_color_select: Entity<SelectState<SearchableVec<AccentColorOption>>>,
     ui_font_select: Entity<SelectState<SearchableVec<FontOption>>>,
     code_font_select: Entity<SelectState<SearchableVec<FontOption>>>,
-    code_theme_select: Entity<SelectState<SearchableVec<CodeThemeOption>>>,
     // Subscriptions for auto-save
     _api_key_subscription: Subscription,
     _base_url_subscription: Subscription,
@@ -263,7 +243,6 @@ pub struct SettingsView {
     _accent_color_subscription: Subscription,
     _ui_font_subscription: Subscription,
     _code_font_subscription: Subscription,
-    _code_theme_subscription: Subscription,
 }
 
 impl SettingsView {
@@ -280,7 +259,6 @@ impl SettingsView {
             current_accent_color,
             current_ui_font,
             current_code_font,
-            current_code_theme,
         ) = {
             let settings = get_settings(cx);
             (
@@ -294,7 +272,6 @@ impl SettingsView {
                 settings.appearance.accent_color.clone(),
                 settings.appearance.ui_font.clone(),
                 settings.appearance.code_font.clone(),
-                settings.appearance.code_theme.clone(),
             )
         };
 
@@ -497,20 +474,6 @@ impl SettingsView {
             )
         });
 
-        // Appearance settings - Code theme select
-        let code_theme_options = Self::get_code_theme_options(cx);
-        let code_theme_index = code_theme_options
-            .iter()
-            .position(|o| o.value == current_code_theme);
-        let code_theme_select = cx.new(|cx| {
-            SelectState::new(
-                SearchableVec::new(code_theme_options),
-                code_theme_index.map(IndexPath::new),
-                window,
-                cx,
-            )
-        });
-
         // Subscribe to input changes for auto-save
         let _api_key_subscription = cx.subscribe_in(
             &api_key_input,
@@ -622,16 +585,6 @@ impl SettingsView {
             },
         );
 
-        let _code_theme_subscription = cx.subscribe_in(
-            &code_theme_select,
-            window,
-            |this, _, event: &SelectEvent<SearchableVec<CodeThemeOption>>, _window, cx| {
-                if let SelectEvent::Confirm(Some(theme)) = event {
-                    this.save_code_theme(theme.clone(), cx);
-                }
-            },
-        );
-
         let mut view = Self {
             current_category: SettingsCategory::General,
             selected_provider_id,
@@ -647,7 +600,6 @@ impl SettingsView {
             accent_color_select,
             ui_font_select,
             code_font_select,
-            code_theme_select,
             _api_key_subscription,
             _base_url_subscription,
             _proxy_subscription,
@@ -659,7 +611,6 @@ impl SettingsView {
             _accent_color_subscription,
             _ui_font_subscription,
             _code_font_subscription,
-            _code_theme_subscription,
         };
 
         // Load provider data into inputs
@@ -788,15 +739,6 @@ impl SettingsView {
         appearance.apply_code_font(cx);
     }
 
-    fn save_code_theme(&mut self, value: Option<String>, cx: &mut Context<Self>) {
-        update_settings(cx, |settings| {
-            settings.appearance.code_theme = value;
-        });
-        // Apply the new code theme immediately
-        let appearance = get_settings(cx).appearance.clone();
-        appearance.apply_code_theme(cx);
-    }
-
     /// Get available font options from the system
     fn get_font_options(cx: &App) -> Vec<FontOption> {
         let mut fonts = vec![FontOption {
@@ -838,29 +780,6 @@ impl SettingsView {
             themes.push(ThemeOption {
                 value: Some(theme_name.to_string()),
                 label: theme_name.to_string(),
-            });
-        }
-
-        themes
-    }
-
-    /// Get available code theme options from CodeThemeRegistry
-    fn get_code_theme_options(cx: &App) -> Vec<CodeThemeOption> {
-        use gpui_markdown::CodeThemeRegistry;
-
-        let mut themes = vec![CodeThemeOption {
-            value: None,
-            label: t!("settings.code_theme_auto").to_string(),
-        }];
-
-        let registry = CodeThemeRegistry::global(cx);
-        let mut theme_names = registry.theme_names();
-        theme_names.sort();
-
-        for theme_name in theme_names {
-            themes.push(CodeThemeOption {
-                value: Some(theme_name.clone()),
-                label: theme_name,
             });
         }
 
@@ -1127,8 +1046,6 @@ impl SettingsView {
         let ui_font_desc = t!("settings.ui_font_desc").to_string();
         let code_font_label = t!("settings.code_font").to_string();
         let code_font_desc = t!("settings.code_font_desc").to_string();
-        let code_theme_label = t!("settings.code_theme").to_string();
-        let code_theme_desc = t!("settings.code_theme_desc").to_string();
 
         self.render_settings_page(
             v_flex()
@@ -1167,14 +1084,6 @@ impl SettingsView {
                     code_font_label,
                     code_font_desc,
                     Select::new(&self.code_font_select).w(px(280.)),
-                    cx,
-                ))
-                .child(Divider::horizontal())
-                // Code theme row with description
-                .child(self.render_settings_row_with_desc(
-                    code_theme_label,
-                    code_theme_desc,
-                    Select::new(&self.code_theme_select).w(px(280.)),
                     cx,
                 )),
             cx,
@@ -1241,7 +1150,7 @@ impl SettingsView {
     }
 
     fn provider_icon(provider_id: &str, theme: &gpui_component::Theme) -> impl IntoElement {
-        use crate::assets::{IntoIcon, LlmProvider};
+        use crate::icons::{IntoIcon, LlmProvider};
         use std::str::FromStr;
 
         let provider = LlmProvider::from_str(provider_id).ok();

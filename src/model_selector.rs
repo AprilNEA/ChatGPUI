@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use gpui::prelude::FluentBuilder;
 use gpui::*;
 use gpui_component::{
-    ActiveTheme, Icon, IconName, Sizable,
+    ActiveTheme, Sizable,
     button::{Button, ButtonVariants},
     h_flex,
     label::Label,
@@ -16,6 +16,7 @@ use gpui_component::{
 };
 use gpui_tokio_bridge::Tokio;
 
+use crate::icons::{AppIcon, ButtonAppIconExt};
 use crate::llm::{self, Model};
 use crate::settings::{OpenSettings, get_settings, update_settings};
 
@@ -180,39 +181,35 @@ impl ModelSelector {
     }
 
     fn render_provider_icon(provider_id: &str, foreground: Hsla) -> Div {
-        // Provider ID to SVG icon path mapping
-        let icon_path = match provider_id {
-            "anthropic" => Some("icons/brand/anthropic.svg"),
-            "openai" => Some("icons/brand/openai.svg"),
-            "google_ai" => Some("icons/brand/google.svg"),
-            _ => None,
-        };
+        use crate::icons::{IntoIcon, LlmProvider};
+        use std::str::FromStr;
 
-        if let Some(path) = icon_path {
+        let provider = LlmProvider::from_str(provider_id).ok();
+
+        if let Some(p) = provider {
             div()
                 .size_6()
                 .flex()
                 .items_center()
                 .justify_center()
-                .child(svg().path(path).size_5().text_color(foreground))
+                .child(p.icon().size_5().text_color(foreground))
         } else {
-            // Fallback for providers without SVG icons
-            let (icon_text, bg_color) = match provider_id {
-                "deepseek" => ("D", hsla(0.55, 0.7, 0.5, 1.0)),
-                "mistral" => ("M", hsla(0.75, 0.6, 0.5, 1.0)),
-                "groq" => ("G", hsla(0.95, 0.7, 0.5, 1.0)),
-                _ => ("?", hsla(0.0, 0.0, 0.5, 1.0)),
-            };
-
+            // Fallback for unknown providers
+            let first_char = provider_id
+                .chars()
+                .next()
+                .unwrap_or('?')
+                .to_uppercase()
+                .to_string();
             div()
                 .size_6()
                 .rounded_sm()
-                .bg(bg_color)
+                .bg(hsla(0.0, 0.0, 0.5, 1.0))
                 .flex()
                 .items_center()
                 .justify_center()
                 .child(
-                    Label::new(icon_text)
+                    Label::new(first_char)
                         .text_xs()
                         .font_weight(FontWeight::BOLD)
                         .text_color(white()),
@@ -346,11 +343,7 @@ impl ModelSelector {
                                 h_flex()
                                     .gap_1()
                                     .items_center()
-                                    .child(
-                                        Icon::new(IconName::Eye)
-                                            .size_5()
-                                            .text_color(theme.muted_foreground),
-                                    )
+                                    .child(AppIcon::Eye.with_size(px(20.)))
                                     .child(
                                         Label::new("Vision")
                                             .text_xs()
@@ -363,11 +356,7 @@ impl ModelSelector {
                                 h_flex()
                                     .gap_1()
                                     .items_center()
-                                    .child(
-                                        Icon::new(IconName::Settings2)
-                                            .size_5()
-                                            .text_color(theme.muted_foreground),
-                                    )
+                                    .child(AppIcon::Settings2.with_size(px(20.)))
                                     .child(
                                         Label::new("Tools")
                                             .text_xs()
@@ -430,7 +419,7 @@ impl Render for ModelSelector {
                                                     .text_base()
                                                     .font_weight(FontWeight::MEDIUM),
                                             )
-                                            .child(Icon::new(IconName::ChevronDown).size_6()),
+                                            .child(AppIcon::ChevronDown.with_size(px(24.))),
                                     ),
                             )
                             .content(move |_state, _window, cx| {
@@ -465,11 +454,7 @@ impl Render for ModelSelector {
                                         .rounded_lg()
                                         .shadow_lg()
                                         .items_center()
-                                        .child(
-                                            Icon::new(IconName::Settings)
-                                                .size_8()
-                                                .text_color(theme.muted_foreground),
-                                        )
+                                        .child(AppIcon::Settings.with_size(px(32.)))
                                         .child(
                                             Label::new(t!("menu.no_provider_configured").to_string())
                                                 .text_sm()
@@ -631,34 +616,20 @@ impl Render for ModelSelector {
                                                                             .items_center()
                                                                             .when(is_selected, |el| {
                                                                                 el.child(
-                                                                                    Icon::new(
-                                                                                        IconName::Check,
-                                                                                    )
-                                                                                    .size_6()
-                                                                                    .text_color(
-                                                                                        theme.accent,
-                                                                                    ),
+                                                                                    AppIcon::Check
+                                                                                        .with_size(px(24.)),
                                                                                 )
                                                                             })
                                                                             .when(supports_vision, |el| {
                                                                                 el.child(
-                                                                                    Icon::new(IconName::Eye)
-                                                                                        .size_5()
-                                                                                        .text_color(
-                                                                                            theme
-                                                                                                .muted_foreground,
-                                                                                        ),
+                                                                                    AppIcon::Eye
+                                                                                        .with_size(px(20.)),
                                                                                 )
                                                                             })
                                                                             .when(supports_tools, |el| {
                                                                                 el.child(
-                                                                                    Icon::new(
-                                                                                        IconName::Settings2,
-                                                                                    )
-                                                                                    .size_5()
-                                                                                    .text_color(
-                                                                                        theme.muted_foreground,
-                                                                                    ),
+                                                                                    AppIcon::Settings2
+                                                                                        .with_size(px(20.)),
                                                                                 )
                                                                             }),
                                                                     ),
@@ -685,7 +656,7 @@ impl Render for ModelSelector {
             .child(
                 h_flex().gap_1().child(
                     Button::new("toggle-panel")
-                        .icon(IconName::PanelRight)
+                        .app_icon(AppIcon::PanelRight)
                         .ghost()
                         .small(),
                 ),

@@ -13,9 +13,10 @@ use gpui_component::{
     v_flex,
 };
 
-use crate::assets::{AppIcon, ButtonAppIconExt};
 use crate::components::split_button_labeled;
-use crate::message::Attachment;
+use crate::icons::{AppIcon, ButtonAppIconExt};
+
+use super::message::Attachment;
 
 const MAX_IMAGE_SIZE: usize = 20 * 1024 * 1024; // 20MB
 
@@ -183,7 +184,7 @@ impl MessageInput {
                     let mime_type = mime_from_extension(&name);
                     let attachment = Attachment::new_image(name, mime_type, data);
 
-                    let _ = cx.update(|app| {
+                    cx.update(|app| {
                         let _ = this.update(app, |this, cx| {
                             this.attachments.push(attachment);
                             cx.notify();

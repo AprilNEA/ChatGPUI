@@ -14,11 +14,13 @@ use gpui_component::{
     v_flex,
 };
 
-use crate::assets::{AppIcon, ButtonAppIconExt};
+use crate::icons::{AppIcon, ButtonAppIconExt};
 use gpui_tokio_bridge::Tokio;
 
-use crate::chat_sidebar::{ChatSidebar, ConversationDeletedEvent, ConversationSelectedEvent};
-use crate::chat_view::{BackgroundStreamFinishedEvent, ChatView, ConversationUpdatedEvent};
+use crate::chat::{
+    BackgroundStreamFinishedEvent, ChatSidebar, ChatView, ConversationDeletedEvent,
+    ConversationSelectedEvent, ConversationUpdatedEvent,
+};
 use crate::database;
 use crate::model_selector::{ModelSelector, ModelSelectorChangedEvent};
 

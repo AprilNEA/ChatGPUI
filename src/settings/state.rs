@@ -115,27 +115,8 @@ impl AppearanceSettings {
         if let Some(font) = &self.code_font {
             theme.mono_font_family = SharedString::from(font.clone());
         } else {
-            // Use system default monospace font
-            theme.mono_font_family = SharedString::from("monospace");
-        }
-    }
-
-    /// Apply code syntax highlighting theme
-    pub fn apply_code_theme(&self, cx: &mut App) {
-        use gpui_markdown::CodeThemeRegistry;
-
-        let registry = CodeThemeRegistry::global(cx);
-        if let Some(theme_name) = &self.code_theme {
-            registry.set_current_theme(theme_name);
-        } else {
-            // Use default theme based on UI mode
-            let is_dark = Theme::global(cx).mode.is_dark();
-            let default_theme = if is_dark {
-                "base16-ocean.dark"
-            } else {
-                "base16-ocean.light"
-            };
-            registry.set_current_theme(default_theme);
+            // SF Mono has better letter spacing than Menlo
+            theme.mono_font_family = SharedString::from("SF Mono");
         }
     }
 
@@ -145,7 +126,6 @@ impl AppearanceSettings {
         self.apply_mode(window, cx);
         self.apply_ui_font(cx);
         self.apply_code_font(cx);
-        self.apply_code_theme(cx);
     }
 }
 

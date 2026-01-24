@@ -5,7 +5,7 @@ use strum::{Display, EnumString};
 use gpui::{AnyElement, IntoElement, SharedString};
 use gpui_component::IconNamed;
 
-use crate::assets::IntoIcon;
+use super::IntoIcon;
 
 /// LLM Provider enum
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, EnumString, Display)]

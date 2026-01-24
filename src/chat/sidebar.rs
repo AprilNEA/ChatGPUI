@@ -7,7 +7,7 @@ use std::rc::Rc;
 
 use gpui::*;
 use gpui_component::{
-    ActiveTheme, Icon, Theme, ThemeMode, VirtualListScrollHandle,
+    ActiveTheme, Icon, Sizable, Theme, ThemeMode, VirtualListScrollHandle,
     button::{Button, ButtonVariants},
     h_flex,
     input::{Input, InputState},
@@ -17,12 +17,11 @@ use gpui_component::{
     v_flex, v_virtual_list,
 };
 
-use crate::assets::{AppIcon, ButtonAppIconExt};
+use crate::database::{self, conversation};
+use crate::icons::{AppIcon, ButtonAppIconExt};
 use crate::settings::OpenSettings;
 use gpui_tokio_bridge::Tokio;
 use uuid::Uuid;
-
-use crate::database::{self, conversation};
 
 /// Event emitted when a conversation is selected
 pub struct ConversationSelectedEvent {
@@ -106,7 +105,7 @@ impl ChatSidebar {
 
         cx.spawn(async move |this, cx| {
             if let Ok(Ok(conversations)) = rx.recv().await {
-                let _ = cx.update(|app| {
+                cx.update(|app| {
                     let _ = this.update(app, |this, cx| {
                         this.conversations = conversations;
                         this.db_ready = true;
@@ -206,7 +205,7 @@ impl ChatSidebar {
 
         cx.spawn(async move |this, cx| {
             if let Ok(Ok(conversations)) = rx.recv().await {
-                let _ = cx.update(|app| {
+                cx.update(|app| {
                     let _ = this.update(app, |this, cx| {
                         this.conversations = conversations;
                         this.db_ready = true;
@@ -259,8 +258,8 @@ impl ChatSidebar {
 
         // Focus the input on next frame
         let focus_handle = input.focus_handle(cx);
-        window.on_next_frame(move |window, _cx| {
-            focus_handle.focus(window);
+        window.on_next_frame(move |window, cx| {
+            focus_handle.focus(window, cx);
         });
 
         self.editing = Some(EditingState {
@@ -516,8 +515,8 @@ impl ChatSidebar {
 
         // Double-frame focus scheduling for smooth menu appearance
         window.on_next_frame(move |window, _cx| {
-            window.on_next_frame(move |window, _cx| {
-                focus_handle.focus(window);
+            window.on_next_frame(move |window, cx| {
+                focus_handle.focus(window, cx);
             });
         });
 
@@ -532,8 +531,8 @@ impl ChatSidebar {
     fn render_search(&mut self, _cx: &mut Context<Self>) -> impl IntoElement {
         h_flex().w_full().px_3().pb_2().child(
             Input::new(&self.search_input)
-                .prefix(Icon::new(AppIcon::Search).size_6())
-                .appearance(false),
+                .prefix(Icon::new(AppIcon::Search).size_4())
+                .small(),
         )
     }
 
@@ -568,7 +567,7 @@ impl ChatSidebar {
                     "conversation-list",
                     item_sizes,
                     move |_this, visible_range, _scroll_handle, cx| {
-                        use crate::assets::{IntoIcon, LlmProvider};
+                        use crate::icons::{IntoIcon, LlmProvider};
                         use std::str::FromStr;
 
                         let theme = cx.theme();

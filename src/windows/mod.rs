@@ -2,10 +2,6 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 
-mod provider;
-mod state;
-mod view;
+mod about;
 
-pub use provider::*;
-pub use state::*;
-pub use view::*;
+pub use about::{OpenAbout, open_about_window};

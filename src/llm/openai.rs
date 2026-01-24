@@ -11,7 +11,7 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 
-use crate::message::{ChatMessage, Role};
+use crate::chat::{ChatMessage, Role};
 
 use super::model::Model;
 use super::provider::{LlmProvider, ProviderConfig, StreamEvent};

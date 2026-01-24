@@ -9,32 +9,25 @@ extern crate rust_i18n;
 
 i18n!("locales", fallback = "en");
 
-mod about;
 mod app;
-mod assets;
-mod chat_sidebar;
-mod chat_view;
+mod chat;
 mod components;
-mod conversation_cache;
 mod database;
+mod icons;
 mod llm;
-mod message;
-mod message_input;
-mod message_list;
 mod model_selector;
-mod scroll_manager;
 mod settings;
 mod storage;
+mod windows;
 
 use std::path::PathBuf;
 
 use gpui::*;
 use gpui_component::{Root, ThemeRegistry};
 
-use crate::assets::Assets;
-
-use about::{OpenAbout, open_about_window};
+use crate::icons::Assets;
 use settings::{OpenSettings, apply_appearance_settings, open_settings_window};
+use windows::{OpenAbout, open_about_window};
 
 actions!(
     app,
@@ -112,25 +105,6 @@ fn main() {
         gpui_tokio_bridge::init(cx);
         settings::init(cx);
         database::init(cx);
-
-        // Initialize code syntax highlighting theme registry
-        gpui_markdown::CodeThemeRegistry::init(cx);
-
-        // Load custom code themes from code_themes directory
-        let code_themes_dir = PathBuf::from("./code_themes");
-        if code_themes_dir.exists() {
-            let registry = gpui_markdown::CodeThemeRegistry::global(cx);
-            match registry.load_from_directory(&code_themes_dir) {
-                Ok(count) => {
-                    if count > 0 {
-                        tracing::info!("Loaded {} custom code themes", count);
-                    }
-                }
-                Err(err) => {
-                    tracing::error!("Failed to load code themes: {}", err);
-                }
-            }
-        }
 
         // Load themes from themes directory
         if let Err(err) = ThemeRegistry::watch_dir(PathBuf::from("./themes"), cx, move |cx| {

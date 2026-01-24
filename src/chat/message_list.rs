@@ -15,17 +15,23 @@ use std::time::Instant;
 use gpui::prelude::FluentBuilder;
 use gpui::*;
 use gpui_component::{
-    ActiveTheme, Icon, h_flex, label::Label, scroll::Scrollbar, skeleton::Skeleton, v_flex,
-    v_virtual_list,
+    ActiveTheme, Icon, IconName,
+    button::{Button, ButtonVariants},
+    h_flex,
+    label::Label,
+    scroll::Scrollbar,
+    skeleton::Skeleton,
+    text::{TextView, TextViewStyle},
+    v_flex, v_virtual_list,
 };
-use gpui_markdown::Markdown;
 use rust_i18n::t;
 use uuid::Uuid;
 
-use crate::assets::{AppIcon, LlmProvider};
-use crate::message::{Message, MessageStatus, Role};
-use crate::scroll_manager::ScrollManager;
+use crate::icons::{AppIcon, LlmProvider};
 use crate::settings::get_settings;
+
+use super::message::{Message, MessageStatus, Role};
+use super::scroll_manager::ScrollManager;
 use std::str::FromStr;
 
 const DEFAULT_CONTENT_WIDTH: Pixels = px(640.);
@@ -935,7 +941,17 @@ fn estimate_text_height(content: &str, width: Pixels) -> Pixels {
 
 impl Render for MessageItem {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // Extract theme colors to local variables to avoid borrow conflicts
         let theme = cx.theme();
+        let accent = theme.accent;
+        let accent_foreground = theme.accent_foreground;
+        let muted = theme.muted;
+        let muted_foreground = theme.muted_foreground;
+        let foreground = theme.foreground;
+        let background = theme.background;
+        let border = theme.border;
+        let danger = theme.danger;
+
         let role = self.role();
         let content = self.content();
         let status = self.status().clone();
@@ -957,8 +973,8 @@ impl Render for MessageItem {
                 .px_4()
                 .py_3()
                 .rounded_lg()
-                .bg(theme.accent)
-                .text_color(theme.accent_foreground)
+                .bg(accent)
+                .text_color(accent_foreground)
                 .child(v_flex().text_sm().child(Label::new(content)));
 
             h_flex()
@@ -986,15 +1002,15 @@ impl Render for MessageItem {
                         .flex_shrink_0()
                         .size_8()
                         .rounded_full()
-                        .bg(theme.muted)
+                        .bg(muted)
                         .flex()
                         .items_center()
                         .justify_center()
                         .map(|this| {
                             if let Some(provider) = provider_icon {
-                                this.child(Icon::new(provider).size_5().text_color(theme.foreground))
+                                this.child(Icon::new(provider).size_5().text_color(foreground))
                             } else {
-                                this.child(Icon::new(AppIcon::Bot).size_5().text_color(theme.foreground))
+                                this.child(AppIcon::Bot.with_size(px(20.)))
                             }
                         }),
                 )
@@ -1034,9 +1050,9 @@ impl Render for MessageItem {
                                                     .py_1()
                                                     .rounded_full()
                                                     .border_1()
-                                                    .border_color(theme.border)
-                                                    .bg(theme.background)
-                                                    .hover(|this| this.bg(theme.muted.opacity(0.5)))
+                                                    .border_color(border)
+                                                    .bg(background)
+                                                    .hover(|this| this.bg(muted.opacity(0.5)))
                                                     .on_click(cx.listener(|this, _, _window, cx| {
                                                         this.toggle_thinking_collapsed(cx);
                                                     }))
@@ -1047,7 +1063,7 @@ impl Render for MessageItem {
                                                             .child(
                                                                 Label::new(thinking_header_text)
                                                                     .text_xs()
-                                                                    .text_color(theme.muted_foreground),
+                                                                    .text_color(muted_foreground),
                                                             )
                                                             .when(!is_thinking_done, |this| {
                                                                 // Pulsing dot when thinking
@@ -1055,7 +1071,7 @@ impl Render for MessageItem {
                                                                     div()
                                                                         .size(px(6.))
                                                                         .rounded_full()
-                                                                        .bg(theme.accent)
+                                                                        .bg(accent)
                                                                         .with_animation(
                                                                             "thinking-pulse",
                                                                             Animation::new(Duration::from_millis(800))
@@ -1068,13 +1084,12 @@ impl Render for MessageItem {
                                                             .when(is_thinking_done, |this| {
                                                                 // Chevron icon
                                                                 this.child(
-                                                                    Icon::new(if thinking_collapsed {
+                                                                    if thinking_collapsed {
                                                                         AppIcon::ChevronDown
                                                                     } else {
                                                                         AppIcon::ChevronUp
-                                                                    })
-                                                                    .size_3()
-                                                                    .text_color(theme.muted_foreground),
+                                                                    }
+                                                                    .with_size(px(12.)),
                                                                 )
                                                             }),
                                                     ),
@@ -1089,13 +1104,13 @@ impl Render for MessageItem {
                                                     .px_3()
                                                     .py_2()
                                                     .rounded_lg()
-                                                    .bg(theme.muted.opacity(0.3))
+                                                    .bg(muted.opacity(0.3))
                                                     .border_l_2()
-                                                    .border_color(theme.muted_foreground.opacity(0.3))
+                                                    .border_color(muted_foreground.opacity(0.3))
                                                     .child(
                                                         Label::new(thinking_text.clone())
                                                             .text_xs()
-                                                            .text_color(theme.muted_foreground),
+                                                            .text_color(muted_foreground),
                                                     ),
                                             )
                                         } else {
@@ -1110,8 +1125,40 @@ impl Render for MessageItem {
                         })
                         .when(!content.is_empty(), |this| {
                             this.child(
-                                Markdown::new(content.clone(), message_id)
-                                    .allow_syntax_highlighting(!is_streaming),
+                                TextView::markdown(
+                                    ElementId::from(message_id),
+                                    content.clone(),
+                                )
+                                .style(TextViewStyle {
+                                    heading_base_font_size: px(18.),
+                                    ..TextViewStyle::default()
+                                })
+                                .code_block_actions(|code_block, _window, cx| {
+                                    let code = code_block.code();
+                                    let lang = code_block.lang();
+                                    let has_lang = lang.is_some();
+                                    h_flex()
+                                        .w_full()
+                                        .justify_between()
+                                        .when_some(lang, |this, l| {
+                                            this.child(
+                                                Label::new(l.to_string())
+                                                    .text_size(px(11.))
+                                                    .text_color(cx.theme().muted_foreground)
+                                            )
+                                        })
+                                        .when(!has_lang, |this| this.child(div()))
+                                        .child(
+                                            Button::new("copy")
+                                                .icon(Icon::new(IconName::Copy))
+                                                .ghost()
+                                                .compact()
+                                                .on_click(move |_, _, cx| {
+                                                    cx.write_to_clipboard(ClipboardItem::new_string(code.to_string()));
+                                                })
+                                        )
+                                })
+                                .selectable(true)
                             )
                         })
                         // Streaming indicator dots
@@ -1123,7 +1170,7 @@ impl Render for MessageItem {
                                         div()
                                             .size(px(6.))
                                             .rounded_full()
-                                            .bg(theme.muted_foreground)
+                                            .bg(muted_foreground)
                                             .with_animation(
                                                 "pulse-1",
                                                 Animation::new(Duration::from_secs(1))
@@ -1136,7 +1183,7 @@ impl Render for MessageItem {
                                         div()
                                             .size(px(6.))
                                             .rounded_full()
-                                            .bg(theme.muted_foreground)
+                                            .bg(muted_foreground)
                                             .with_animation(
                                                 "pulse-2",
                                                 Animation::new(Duration::from_secs(1))
@@ -1149,7 +1196,7 @@ impl Render for MessageItem {
                                         div()
                                             .size(px(6.))
                                             .rounded_full()
-                                            .bg(theme.muted_foreground)
+                                            .bg(muted_foreground)
                                             .with_animation(
                                                 "pulse-3",
                                                 Animation::new(Duration::from_secs(1))
@@ -1174,7 +1221,7 @@ impl Render for MessageItem {
                                                 .flex_shrink_0()
                                                 .size_5()
                                                 .rounded_full()
-                                                .bg(theme.danger)
+                                                .bg(danger)
                                                 .flex()
                                                 .items_center()
                                                 .justify_center()
@@ -1185,7 +1232,7 @@ impl Render for MessageItem {
                                         .child(
                                             Label::new(format!("Error: {}", err))
                                                 .text_sm()
-                                                .text_color(theme.danger),
+                                                .text_color(danger),
                                         ),
                                 )
                             } else {

@@ -5,7 +5,7 @@
 use anyhow::Result;
 use async_trait::async_trait;
 
-use crate::message::ChatMessage;
+use crate::chat::ChatMessage;
 
 use super::model::Model;
 

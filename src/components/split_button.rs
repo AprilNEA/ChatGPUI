@@ -15,7 +15,7 @@ use gpui_component::{
     menu::{DropdownMenu, PopupMenu},
 };
 
-use crate::assets::{AppIcon, ButtonAppIconExt};
+use crate::icons::{AppIcon, ButtonAppIconExt};
 
 /// Creates a split button with an icon on the left and a labeled dropdown on the right.
 ///

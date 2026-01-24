@@ -11,14 +11,17 @@ use gpui_tokio_bridge::Tokio;
 use uuid::Uuid;
 
 use crate::{
-    conversation_cache::ConversationCache,
     database::{self, attachment as db_attachment, message as db_message},
     llm::{self, LlmProvider, StreamEvent},
+    settings::get_settings,
+    storage,
+};
+
+use super::{
+    conversation_cache::ConversationCache,
     message::{Attachment, AttachmentType, ChatMessage, Message, MessageStatus, Role},
     message_input::{MessageInput, SubmitEvent},
     message_list::MessageList,
-    settings::get_settings,
-    storage,
 };
 
 /// Debounce interval for streaming updates (ms).
@@ -225,7 +228,7 @@ impl ChatView {
 
         cx.spawn(async move |this, cx| {
             if let Ok(Ok(messages_with_attachments)) = rx.recv().await {
-                let _ = cx.update(|app| {
+                cx.update(|app| {
                     let _ = this.update(app, |this, cx| {
                         for (msg, attachments) in messages_with_attachments {
                             let role = match msg.role {
@@ -313,7 +316,7 @@ impl ChatView {
 
         cx.spawn(async move |this, cx| {
             if let Ok(Ok(messages_with_attachments)) = rx.recv().await {
-                let _ = cx.update(|app| {
+                cx.update(|app| {
                     let _ = this.update(app, |this, _cx| {
                         for (msg, attachments) in messages_with_attachments {
                             let role = match msg.role {
@@ -507,7 +510,7 @@ impl ChatView {
 
         cx.spawn(async move |this, cx| {
             if let Ok(conversation_id) = rx.recv().await {
-                let _ = cx.update(|app| {
+                cx.update(|app| {
                     let _ = this.update(app, |this, cx| {
                         if this.current_conversation_id.is_none() {
                             this.current_conversation_id = Some(conversation_id);
@@ -671,7 +674,7 @@ impl ChatView {
             while let Ok(event) = rx.recv().await {
                 match event {
                     StreamEvent::ThinkingDelta(content) => {
-                        let _ = cx.update(|app| {
+                        cx.update(|app| {
                             let _ = this.update(app, |this, cx| {
                                 if let Some(stream) = this.active_stream.as_mut() {
                                     // Start thinking timer on first thinking delta
@@ -692,7 +695,7 @@ impl ChatView {
                         });
                     }
                     StreamEvent::ThinkingDone => {
-                        let _ = cx.update(|app| {
+                        cx.update(|app| {
                             let _ = this.update(app, |this, cx| {
                                 if let Some(stream) = this.active_stream.as_mut() {
                                     // Calculate thinking duration
@@ -717,7 +720,7 @@ impl ChatView {
                         });
                     }
                     StreamEvent::Delta(content) => {
-                        let _ = cx.update(|app| {
+                        cx.update(|app| {
                             let _ = this.update(app, |this, cx| {
                                 if let Some(stream) = this.active_stream.as_mut() {
                                     stream.content.push_str(&content);
@@ -731,7 +734,7 @@ impl ChatView {
                         });
                     }
                     StreamEvent::Done => {
-                        let _ = cx.update(|app| {
+                        cx.update(|app| {
                             let _ = this.update(app, |this, cx| {
                                 this.flush_pending_stream_chunk(cx);
                                 this.finish_active_stream(None, cx);
@@ -740,7 +743,7 @@ impl ChatView {
                         break;
                     }
                     StreamEvent::Error(err) => {
-                        let _ = cx.update(|app| {
+                        cx.update(|app| {
                             let _ = this.update(app, |this, cx| {
                                 this.flush_pending_stream_chunk(cx);
                                 this.finish_active_stream(Some(err), cx);
@@ -1061,7 +1064,7 @@ impl ChatView {
                 .timer(Duration::from_millis(STREAM_DEBOUNCE_MS))
                 .await;
 
-            let _ = cx.update(|app| {
+            cx.update(|app| {
                 let _ = this.update(app, |this, cx| {
                     this.flush_pending_stream_chunk(cx);
                     this.debounce_task = None;

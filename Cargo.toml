@@ -24,17 +24,21 @@ path = "src/main.rs"
 [features]
 default = ["sentry", "postgres"]
 sentry = ["dep:sentry"]
-postgres = ["sea-orm/sqlx-postgres", "migration/sqlx-postgres", "dep:postgresql_embedded"]
+postgres = [
+    "sea-orm/sqlx-postgres",
+    "migration/sqlx-postgres",
+    "dep:postgresql_embedded",
+]
 
 [dependencies]
 # Workspace crates
 entity = { path = "crates/entity" }
 migration = { path = "crates/migration" }
-gpui-markdown = { path = "crates/gpui-markdown" }
 
-gpui = "0.2.2"
-gpui-component = "0.5.0"
+gpui = { git = "https://github.com/zed-industries/zed" }
+gpui-component = { git = "https://github.com/longbridge/gpui-component" }
 gpui-tokio-bridge = "0.1.0"
+core-text = "=21.0.0"
 
 # Assets embedding
 rust-embed = "8"
@@ -82,7 +86,9 @@ rust-i18n = "3"
 strum = { version = "0.26", features = ["derive"] }
 
 # Database
-postgresql_embedded = { version = "0.20", features = ["bundled"], optional = true }
+postgresql_embedded = { version = "0.20", features = [
+    "bundled",
+], optional = true }
 sea-orm = { version = "1.1", features = ["runtime-tokio-rustls", "macros"] }
 sea-orm-migration = { version = "1.1", features = ["runtime-tokio-rustls"] }
 
@@ -121,3 +127,6 @@ assets = ["assets/chatgpui.desktop"]
 shadow-rs = "0.37"
 cargo_metadata = "0.19"
 ureq = "2"
+
+[patch.crates-io]
+gpui = { git = "https://github.com/zed-industries/zed" }
