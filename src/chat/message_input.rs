@@ -74,7 +74,11 @@ pub struct SubmitEvent {
     pub image_gen: bool,
 }
 
+/// Event emitted when user clicks the stop button during streaming
+pub struct StopEvent;
+
 impl EventEmitter<SubmitEvent> for MessageInput {}
+impl EventEmitter<StopEvent> for MessageInput {}
 
 impl MessageInput {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
@@ -350,18 +354,27 @@ impl MessageInput {
                         }),
                     )),
             )
-            // 发送按钮
-            .child(
+            // 发送/停止按钮
+            .child(if is_loading {
+                Button::new("stop")
+                    .app_icon(AppIcon::Stop)
+                    .small()
+                    .danger()
+                    .on_click(cx.listener(|this, _, _window, cx| {
+                        cx.emit(StopEvent);
+                        this.set_loading(false, cx);
+                    }))
+                    .into_any_element()
+            } else {
                 Button::new("send")
                     .app_icon(AppIcon::ArrowRight)
                     .small()
                     .primary()
-                    .loading(is_loading)
-                    .disabled(is_loading)
                     .on_click(cx.listener(|this, _, window, cx| {
                         this.handle_submit(window, cx);
-                    })),
-            )
+                    }))
+                    .into_any_element()
+            })
     }
 
     fn render_toggle_button(

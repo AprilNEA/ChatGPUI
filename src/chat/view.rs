@@ -20,7 +20,7 @@ use crate::{
 use super::{
     conversation_cache::ConversationCache,
     message::{Attachment, AttachmentType, ChatMessage, Message, MessageStatus, Role},
-    message_input::{MessageInput, SubmitEvent},
+    message_input::{MessageInput, StopEvent, SubmitEvent},
     message_list::{EditMessageEvent, MessageList},
 };
 
@@ -71,6 +71,8 @@ pub struct ChatView {
     is_generating: bool,
     current_conversation_id: Option<Uuid>,
     _subscription: Subscription,
+    /// Subscription for stop events
+    _stop_subscription: Subscription,
     /// Subscription for MessageList edit events
     _message_list_subscription: Option<Subscription>,
     /// Debounce task to avoid frequent rerenders during streaming.
@@ -122,6 +124,11 @@ impl ChatView {
             },
         );
 
+        // Subscribe to stop events
+        let _stop_subscription = cx.subscribe(&message_input, |this, _, _event: &StopEvent, cx| {
+            this.handle_stop(cx);
+        });
+
         // Subscribe to MessageList edit events
         let _message_list_subscription =
             cx.subscribe(&message_list, |this, _, event: &EditMessageEvent, cx| {
@@ -140,6 +147,7 @@ impl ChatView {
             is_generating: false,
             current_conversation_id: None,
             _subscription,
+            _stop_subscription,
             _message_list_subscription: Some(_message_list_subscription),
             debounce_task: None,
             pending_stream_chunk: String::new(),
@@ -148,6 +156,29 @@ impl ChatView {
             editing_message_id: None,
             pending_edit_content: None,
         }
+    }
+
+    /// Handle stop button click - cancel the current stream
+    fn handle_stop(&mut self, cx: &mut Context<Self>) {
+        if !self.is_generating {
+            return;
+        }
+
+        // Clear active stream and pending state
+        self.active_stream = None;
+        self.pending_stream_result = None;
+        self.debounce_task = None;
+        self.pending_stream_chunk.clear();
+
+        // Finalize any partial streaming message
+        if let Some(message_list) = &self.current_message_list {
+            message_list.update(cx, |list, cx| {
+                list.finish_streaming(cx);
+            });
+        }
+
+        self.finish_generating(cx);
+        cx.notify();
     }
 
     /// Set pending edit state (to be processed in render when window is available)

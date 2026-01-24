@@ -32,6 +32,7 @@ pub enum AppIcon {
     Edit,
     RotateCcw,
     Ellipsis,
+    Stop,
 
     // Panels & Layout
     PanelLeft,
