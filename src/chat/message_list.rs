@@ -40,7 +40,13 @@ pub struct EditMessageEvent {
     pub content: String,
 }
 
+/// Event emitted when user wants to retry from a message
+pub struct RetryMessageEvent {
+    pub message_id: Uuid,
+}
+
 impl EventEmitter<EditMessageEvent> for MessageList {}
+impl EventEmitter<RetryMessageEvent> for MessageList {}
 
 const DEFAULT_CONTENT_WIDTH: Pixels = px(640.);
 const LIST_HORIZONTAL_PADDING: Pixels = px(16.);
@@ -235,6 +241,15 @@ impl MessageList {
             cx.emit(EditMessageEvent {
                 message_id: event.message_id,
                 content: event.content.clone(),
+            });
+            cx.notify();
+            let _ = this; // silence unused warning
+        })
+        .detach();
+
+        cx.subscribe(item, |this, _, event: &MessageItemRetryEvent, cx| {
+            cx.emit(RetryMessageEvent {
+                message_id: event.message_id,
             });
             cx.notify();
             let _ = this; // silence unused warning
@@ -671,6 +686,11 @@ pub struct MessageItemEditEvent {
     pub content: String,
 }
 
+/// Event emitted by MessageItem when retry button is clicked
+pub struct MessageItemRetryEvent {
+    pub message_id: Uuid,
+}
+
 pub struct MessageItem {
     id: Uuid,
     element_id: SharedString,
@@ -682,6 +702,7 @@ pub struct MessageItem {
 }
 
 impl EventEmitter<MessageItemEditEvent> for MessageItem {}
+impl EventEmitter<MessageItemRetryEvent> for MessageItem {}
 
 impl MessageItem {
     fn new(id: Uuid, source: MessageSource) -> Self {
@@ -870,6 +891,12 @@ impl MessageItem {
             content,
         });
     }
+
+    fn emit_retry(&mut self, cx: &mut Context<Self>) {
+        cx.emit(MessageItemRetryEvent {
+            message_id: self.id,
+        });
+    }
 }
 
 fn estimate_item_height(
@@ -1053,8 +1080,8 @@ impl Render for MessageItem {
                         .app_icon(AppIcon::RotateCcw)
                         .ghost()
                         .small()
-                        .on_click(cx.listener(|_this, _, _window, _cx| {
-                            // TODO: Implement retry
+                        .on_click(cx.listener(|this, _, _window, cx| {
+                            this.emit_retry(cx);
                         })),
                 )
                 .child(
@@ -1323,8 +1350,8 @@ impl Render for MessageItem {
                                             .app_icon(AppIcon::RotateCcw)
                                             .ghost()
                                             .small()
-                                            .on_click(cx.listener(|_this, _, _window, _cx| {
-                                                // TODO: Implement retry
+                                            .on_click(cx.listener(|this, _, _window, cx| {
+                                                this.emit_retry(cx);
                                             })),
                                     )
                                     .child(
@@ -1332,8 +1359,8 @@ impl Render for MessageItem {
                                             .app_icon(AppIcon::Edit)
                                             .ghost()
                                             .small()
-                                            .on_click(cx.listener(|_this, _, _window, _cx| {
-                                                // TODO: Implement edit
+                                            .on_click(cx.listener(|this, _, _window, cx| {
+                                                this.emit_edit(cx);
                                             })),
                                     )
                                     .child(

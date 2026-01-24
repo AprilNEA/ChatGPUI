@@ -21,7 +21,7 @@ use super::{
     conversation_cache::ConversationCache,
     message::{Attachment, AttachmentType, ChatMessage, Message, MessageStatus, Role},
     message_input::{MessageInput, StopEvent, SubmitEvent},
-    message_list::{EditMessageEvent, MessageList},
+    message_list::{EditMessageEvent, MessageList, RetryMessageEvent},
 };
 
 /// Debounce interval for streaming updates (ms).
@@ -74,7 +74,9 @@ pub struct ChatView {
     /// Subscription for stop events
     _stop_subscription: Subscription,
     /// Subscription for MessageList edit events
-    _message_list_subscription: Option<Subscription>,
+    _message_list_edit_subscription: Option<Subscription>,
+    /// Subscription for MessageList retry events
+    _message_list_retry_subscription: Option<Subscription>,
     /// Debounce task to avoid frequent rerenders during streaming.
     debounce_task: Option<Task<()>>,
     /// Buffered streaming content accumulated during the debounce window.
@@ -85,6 +87,8 @@ pub struct ChatView {
     editing_message_id: Option<Uuid>,
     /// Pending edit content to be set in input (will be processed in render)
     pending_edit_content: Option<String>,
+    /// Pending retry: if set, will trigger regeneration after render
+    pending_retry: bool,
 }
 
 impl EventEmitter<ConversationUpdatedEvent> for ChatView {}
@@ -130,9 +134,15 @@ impl ChatView {
         });
 
         // Subscribe to MessageList edit events
-        let _message_list_subscription =
+        let _message_list_edit_subscription =
             cx.subscribe(&message_list, |this, _, event: &EditMessageEvent, cx| {
                 this.set_pending_edit(event.message_id, event.content.clone(), cx);
+            });
+
+        // Subscribe to MessageList retry events
+        let _message_list_retry_subscription =
+            cx.subscribe(&message_list, |this, _, event: &RetryMessageEvent, cx| {
+                this.handle_retry(event.message_id, cx);
             });
 
         let messages = vec![Arc::new(Message::system("You are a helpful assistant."))];
@@ -148,13 +158,15 @@ impl ChatView {
             current_conversation_id: None,
             _subscription,
             _stop_subscription,
-            _message_list_subscription: Some(_message_list_subscription),
+            _message_list_edit_subscription: Some(_message_list_edit_subscription),
+            _message_list_retry_subscription: Some(_message_list_retry_subscription),
             debounce_task: None,
             pending_stream_chunk: String::new(),
             active_stream: None,
             pending_stream_result: None,
             editing_message_id: None,
             pending_edit_content: None,
+            pending_retry: false,
         }
     }
 
@@ -191,16 +203,72 @@ impl ChatView {
         cx.notify();
     }
 
-    /// Subscribe to a MessageList's edit events
+    /// Handle retry button click
+    fn handle_retry(&mut self, message_id: Uuid, cx: &mut Context<Self>) {
+        if self.is_generating {
+            return;
+        }
+
+        // Find the message being retried
+        let Some(index) = self.messages.iter().position(|m| m.id == message_id) else {
+            return;
+        };
+
+        let message = &self.messages[index];
+
+        if message.role == Role::User {
+            // For user messages: delete from this message onwards, then re-send
+            let content = message.content.clone();
+            let attachments = message.attachments.clone();
+
+            // Delete messages from this index onwards
+            self.truncate_messages_from(message_id, cx);
+
+            // Re-add the user message and generate response
+            let user_message = if attachments.is_empty() {
+                Message::user(&content)
+            } else {
+                Message::user_with_attachments(&content, attachments.clone())
+            };
+            self.messages.push(Arc::new(user_message.clone()));
+            self.update_message_list(cx);
+
+            // Save message if we have a conversation
+            if self.current_conversation_id.is_some() {
+                self.save_message_to_db(user_message.id, Role::User, content.clone(), cx);
+                self.save_attachments_to_storage(user_message.id, attachments, cx);
+            }
+
+            // Set pending retry flag to trigger regeneration in render
+            self.pending_retry = true;
+            cx.notify();
+        } else if message.role == Role::Assistant {
+            // For assistant messages: delete this message, then regenerate
+            // Find the previous user message to regenerate from
+            self.truncate_messages_from(message_id, cx);
+
+            // Set pending retry flag to trigger regeneration in render
+            self.pending_retry = true;
+            cx.notify();
+        }
+    }
+
+    /// Subscribe to a MessageList's events
     fn subscribe_message_list(
         &mut self,
         message_list: &Entity<MessageList>,
         cx: &mut Context<Self>,
     ) {
-        self._message_list_subscription = Some(cx.subscribe(
+        self._message_list_edit_subscription = Some(cx.subscribe(
             message_list,
             |this, _, event: &EditMessageEvent, cx| {
                 this.set_pending_edit(event.message_id, event.content.clone(), cx);
+            },
+        ));
+        self._message_list_retry_subscription = Some(cx.subscribe(
+            message_list,
+            |this, _, event: &RetryMessageEvent, cx| {
+                this.handle_retry(event.message_id, cx);
             },
         ));
     }
@@ -217,6 +285,7 @@ impl ChatView {
         self.clear_streaming_ui_buffer();
         self.editing_message_id = None;
         self.pending_edit_content = None;
+        self.pending_retry = false;
 
         // Create a new MessageList for the new chat (no conversation ID)
         let message_list = cx.new(MessageList::new);
@@ -242,6 +311,7 @@ impl ChatView {
         self.clear_streaming_ui_buffer();
         self.editing_message_id = None;
         self.pending_edit_content = None;
+        self.pending_retry = false;
 
         // Try to get MessageList from cache (zero-copy switch)
         if let Some(cached_list) = self.conversation_cache.take(conversation_id) {
@@ -1214,6 +1284,12 @@ impl Render for ChatView {
             self.message_input.update(cx, |input, cx| {
                 input.set_value(content, window, cx);
             });
+        }
+
+        // Process pending retry (trigger regeneration when window is available)
+        if self.pending_retry {
+            self.pending_retry = false;
+            self.generate_response(window, cx);
         }
 
         let theme = cx.theme();
