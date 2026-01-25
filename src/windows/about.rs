@@ -45,7 +45,7 @@ impl Render for AboutView {
                     .size(px(80.))
                     .items_center()
                     .justify_center()
-                    .child(gpui::img("icons/chatgpui.png").size(px(80.))),
+                    .child(gpui::img("chatgpui.png").size(px(80.))),
             )
             // App name
             .child(
